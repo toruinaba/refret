@@ -1,0 +1,9 @@
+streamlit
+demucs
+faster-whisper
+openai
+torch
+torchaudio
+python-dotenv
+av>=13.0.0
+soundfile
