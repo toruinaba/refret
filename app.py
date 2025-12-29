@@ -194,19 +194,29 @@ if mode == "New Lesson (Upload)":
     if st.button("Start Processing", type="primary"):
         if uploaded_file and input_title:
             try:
-                with st.status("Processing...", expanded=True) as status:
-                    st.write("Initializing...")
+                with st.status("Processing Lesson...", expanded=True) as status:
                     
-                    # Process
-                    st.write("Converting & Separating audio...")
-                    # Use input_title for folder name
-                    lesson_dir = processor.process_lesson(uploaded_file, input_title)
+                    st.write("🔄 Initializing & Converting audio format...")
+                    lesson_dir, temp_wav = processor.prepare_lesson_upload(uploaded_file, input_title)
                     
-                    st.write("Transcribing & Summarizing...")
-                    # (process_lesson does all this)
+                    st.write("🎸 Separating Vocals and Guitar (Demucs)...")
+                    vocals_path, guitar_path = processor.separate_audio(temp_wav, lesson_dir)
                     
-                    # Save Metadata
-                    st.write("Saving Metadata...")
+                    # Cleanup temp wav
+                    if temp_wav.exists():
+                        temp_wav.unlink()
+                    
+                    st.write("📜 Transcribing Vocals (Whisper)...")
+                    transcript_text, segments = processor.transcribe(vocals_path)
+                    
+                    st.write("🤖 Generating Summary (LLM)...")
+                    summary_json = processor.summarize(transcript_text)
+                    
+                    st.write("💾 Saving Results...")
+                    processor.save_results(lesson_dir, segments, transcript_text, summary_json)
+                    
+                    # Save Metadata (User Inputs)
+                    st.write("📝 Saving Metadata...")
                     meta = {
                         "tags": input_tags,
                         "memo": input_memo,
@@ -214,7 +224,7 @@ if mode == "New Lesson (Upload)":
                     }
                     save_metadata(lesson_dir, meta)
                     
-                    status.update(label="Complete!", state="complete", expanded=False)
+                    status.update(label="Processing Complete!", state="complete", expanded=False)
                     st.success(f"Lesson '{lesson_dir.name}' processed successfully!")
                     st.balloons()
                     st.info("Go to 'Library (Review)' to see your results.")

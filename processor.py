@@ -250,20 +250,18 @@ class AudioProcessor:
             print(f"LLM error: {e}")
             return {"error": str(e)}
 
-    def process_lesson(self, uploaded_file, lesson_title):
+    def prepare_lesson_upload(self, uploaded_file, lesson_title):
         """
-        Orchestrate the full pipeline.
+        Step 1: Create directory, save upload, convert to MP3, create temp WAV.
+        Returns: (lesson_dir, temp_proc_wav_path)
         """
         # Create directory for this lesson
-        # Sanitize title
         safe_title = "".join([c for c in lesson_title if c.isalpha() or c.isdigit() or c==' ']).rstrip().replace(" ", "_")
         lesson_dir = self.data_dir / safe_title
         lesson_dir.mkdir(parents=True, exist_ok=True)
 
         original_mp3_path = lesson_dir / "original.mp3"
 
-        # Save uploaded file
-        # Convert to MP3 using ffmpeg (File-based approach for maximum robustness & space saving)
         print(f"Converting upload ({uploaded_file.name}) to MP3...")
         
         # Determine extension or default to .tmp
@@ -303,7 +301,6 @@ class AudioProcessor:
                 temp_input_path.unlink()
             
             # 3. Create a temporary WAV for processing (Demucs/Soundfile best compatibility)
-            # We don't want to keep this, just use it for separation
             temp_proc_wav = lesson_dir / "proc_temp.wav"
             cmd_wav = [
                 "ffmpeg", "-y",
@@ -314,6 +311,8 @@ class AudioProcessor:
                 str(temp_proc_wav)
             ]
             subprocess.run(cmd_wav, check=True, capture_output=True)
+            
+            return lesson_dir, temp_proc_wav
 
         except subprocess.CalledProcessError as e:
             print(f"FFmpeg conversion failed: {e}")
@@ -326,29 +325,39 @@ class AudioProcessor:
              traceback.print_exc()
              raise e
 
-        # 1. Separate (Using the temp WAV for stability)
-        vocals_path, guitar_path = self.separate_audio(temp_proc_wav, lesson_dir)
-        
-        # Cleanup temp processing wav
-        if temp_proc_wav.exists():
-            temp_proc_wav.unlink()
-
-        # 2. Transcribe Vocals (Whisper can read MP3 directly usually, code assumes path)
-        # Note: separate_audio returns MP3 paths now.
-        transcript_text, segments = self.transcribe(vocals_path)
-        
+    def save_results(self, lesson_dir, segments, transcript_text, summary_json):
+        """Step 4: Save transcript and summary."""
         # Save transcript
         with open(lesson_dir / "transcript.json", "w") as f:
             json.dump(segments, f, indent=2)
         
         with open(lesson_dir / "transcript.txt", "w") as f:
             f.write(transcript_text)
-
-        # 3. Summarize
-        summary_json = self.summarize(transcript_text)
-        
+            
         # Save summary
         with open(lesson_dir / "summary.json", "w") as f:
             json.dump(summary_json, f, indent=2)
+
+    def process_lesson(self, uploaded_file, lesson_title):
+        """
+        Orchestrate the full pipeline (Legacy wapper).
+        """
+        lesson_dir, temp_proc_wav = self.prepare_lesson_upload(uploaded_file, lesson_title)
+        
+        # 1. Separate
+        vocals_path, guitar_path = self.separate_audio(temp_proc_wav, lesson_dir)
+        
+        # Cleanup temp processing wav
+        if temp_proc_wav.exists():
+            temp_proc_wav.unlink()
+
+        # 2. Transcribe Vocals
+        transcript_text, segments = self.transcribe(vocals_path)
+        
+        # 3. Summarize
+        summary_json = self.summarize(transcript_text)
+        
+        # 4. Save
+        self.save_results(lesson_dir, segments, transcript_text, summary_json)
             
         return lesson_dir
