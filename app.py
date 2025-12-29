@@ -510,6 +510,8 @@ elif mode == "Library (Review)":
                                     </label>
                                 </div>
                             </div>
+
+                            <div id="timeDisplay" style="font-family: monospace; font-size: 14px; margin-left: 10px;">00:00 / 00:00</div>
                             
                             <div style="font-size: 0.9em; margin-left: auto; color: #aaa;">
                                 <small>💡 Drag guitar track to loop</small>
@@ -573,6 +575,7 @@ elif mode == "Library (Review)":
                 const zoomSlider = document.getElementById('zoomSlider');
                 const muteV = document.getElementById('muteV');
                 const muteG = document.getElementById('muteG');
+                const timeDisplay = document.getElementById('timeDisplay');
 
                 // Initialize Wavesurfer Instances
                 let wsV, wsG;
@@ -614,10 +617,36 @@ elif mode == "Library (Review)":
                 wsV.load(vocalsData);
                 wsG.load(guitarData);
 
+                // --- Helper: Format Time ---
+                function formatTime(seconds) {{
+                    const m = Math.floor(seconds / 60);
+                    const s = Math.floor(seconds % 60);
+                    return `${{m.toString().padStart(2, '0')}}:${{s.toString().padStart(2, '0')}}`;
+                }}
+                
+                function updateTimeDisplay() {{
+                    const current = wsV.getCurrentTime();
+                    const total = wsV.getDuration();
+                    if (total > 0) {{
+                        timeDisplay.textContent = `${{formatTime(current)}} / ${{formatTime(total)}}`;
+                    }} else {{
+                         timeDisplay.textContent = "00:00 / 00:00";
+                    }}
+                }}
+
                 // --- Event Listeners & Sync ---
                 
-                wsV.on('ready', () => {{ isReadyV = true; checkReady(); }});
+                wsV.on('ready', () => {{ 
+                    isReadyV = true; 
+                    checkReady();
+                    updateTimeDisplay();
+                }});
                 wsG.on('ready', () => {{ isReadyG = true; checkReady(); }});
+                
+                // Time Update
+                wsV.on('timeupdate', () => {{
+                    updateTimeDisplay();
+                }});
 
                 function checkReady() {{
                     if (isReadyV && isReadyG) {{
@@ -641,11 +670,13 @@ elif mode == "Library (Review)":
                 // Sync: Seek
                 wsV.on('seeking', (currentTime) => {{
                     wsG.setTime(currentTime);
+                    updateTimeDisplay();
                 }});
                 
                 // Also sync if user clicks on guitar track
                 wsG.on('interaction', () => {{
                     wsV.setTime(wsG.getCurrentTime());
+                    updateTimeDisplay();
                 }});
                 
                 // Sync: Finish
@@ -719,6 +750,7 @@ elif mode == "Library (Review)":
             </script>
             </body>
             </html>
+
             """
 
             # Render
