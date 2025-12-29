@@ -137,44 +137,109 @@ elif mode == "Library (Review)":
                         except json.JSONDecodeError:
                             st.error("Error reading summary file.")
 
-                # Generate Custom HTML for Player & Interactive Summary
-                
+                # Download Buttons
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if vocals_path.exists():
+                        with open(vocals_path, "rb") as f:
+                            st.download_button("Download Vocals (MP3)", f, file_name="vocals.mp3")
+                with col2:
+                    if guitar_path.exists():
+                        with open(guitar_path, "rb") as f:
+                            st.download_button("Download Guitar (MP3)", f, file_name="guitar.mp3")
+                with col3:
+                    if original_path.exists():
+                        with open(original_path, "rb") as f:
+                            st.download_button("Download Original (MP3)", f, file_name="original.mp3")
+
+                # Generate Custom HTML for Wavesurfer Player & Interactive Summary
                 html_content = f"""
                 <html>
                 <head>
+                <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
+                <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
                 <style>
-                    body {{ font-family: sans-serif; color: #333; }}
-                    .container {{ display: flex; gap: 20px; }}
-                    .player_col {{ flex: 1; padding: 20px; background: #f9f9f9; border-radius: 10px; }}
-                    .summary_col {{ flex: 1; padding: 20px; background: #fff; border: 1px solid #ddd; border-radius: 10px; height: 500px; overflow-y: auto; }}
+                    body {{ font-family: sans-serif; color: #333; margin: 0; padding: 0; }}
+                    .container {{ display: flex; gap: 20px; flex-direction: column; }}
+                    
+                    /* Desktop layout */
+                    @media (min-width: 768px) {{
+                        .container {{ flex-direction: row; }}
+                    }}
+
+                    .player_col {{ flex: 2; padding: 20px; background: #f9f9f9; border-radius: 10px; }}
+                    .summary_col {{ flex: 1; padding: 20px; background: #fff; border: 1px solid #ddd; border-radius: 10px; height: 600px; overflow-y: auto; }}
                     
                     h3 {{ margin-top: 0; }}
                     
-                    .audio-control {{ margin-bottom: 20px; }}
-                    audio {{ width: 100%; margin-bottom: 10px; }}
-                    
-                    .speed-controls {{ margin-bottom: 20px; }}
-                    .btn {{ 
-                        padding: 5px 10px; 
-                        margin-right: 5px; 
-                        cursor: pointer; 
-                        background: #eee; 
-                        border: 1px solid #ccc; 
-                        border-radius: 4px; 
+                    /* Controls */
+                    .controls-area {{ 
+                        background: #333; 
+                        padding: 15px; 
+                        border-radius: 8px; 
+                        color: white;
+                        display: flex;
+                        align-items: center;
+                        gap: 20px;
+                        margin-bottom: 20px;
+                        flex-wrap: wrap;
                     }}
-                    .btn:hover {{ background: #ddd; }}
-                    .btn.active {{ background: #ff4b4b; color: white; border-color: #ff4b4b; }}
                     
+                    .play-btn {{
+                        background: #ff4b4b;
+                        color: white;
+                        border: none;
+                        width: 50px;
+                        height: 50px;
+                        border-radius: 50%;
+                        font-size: 24px;
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        transition: background 0.2s;
+                    }}
+                    .play-btn:hover {{ background: #ff3333; }}
+
+                    .slider-group {{ display: flex; flex-direction: column; gap: 5px; min-width: 150px; }}
+                    .slider-group label {{ font-size: 12px; color: #ccc; }}
+                    input[type=range] {{ width: 100%; cursor: pointer; }}
+
+                    .waveform-box {{
+                        margin-bottom: 20px;
+                        background: white;
+                        padding: 10px;
+                        border-radius: 8px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        position: relative;
+                    }}
+                    .waveform-label {{
+                        position: absolute;
+                        top: 5px;
+                        left: 10px;
+                        font-size: 11px;
+                        font-weight: bold;
+                        z-index: 10;
+                        padding: 2px 6px;
+                        border-radius: 4px;
+                        background: rgba(255,255,255,0.8);
+                        pointer-events: none;
+                    }}
+
+                    /* Interactive Summary Styles */
                     .timestamp-link {{
                         color: #ff4b4b;
                         text-decoration: none;
                         font-weight: bold;
                         cursor: pointer;
+                        padding: 2px 4px;
+                        border-radius: 4px;
+                        transition: background 0.2s;
                     }}
-                    .timestamp-link:hover {{ text-decoration: underline; }}
+                    .timestamp-link:hover {{ background: #ffeeee; text-decoration: underline; }}
                     
                     ul {{ padding-left: 20px; }}
-                    li {{ margin-bottom: 8px; }}
+                    li {{ margin-bottom: 12px; line-height: 1.5; }}
                 </style>
                 </head>
                 <body>
@@ -184,35 +249,53 @@ elif mode == "Library (Review)":
                     <div class="player_col">
                         <h3>🎧 Study Player</h3>
                         
-                        <div class="speed-controls">
-                            <span style="margin-right: 10px; font-weight: bold;">Speed:</span>
-                            <button class="btn" onclick="setSpeed(0.5, this)">0.5x</button>
-                            <button class="btn" onclick="setSpeed(0.75, this)">0.75x</button>
-                            <button class="btn active" onclick="setSpeed(1.0, this)">1.0x</button>
+                        <div class="controls-area">
+                            <button id="playBtn" class="play-btn">▶</button>
+                            
+                            <div class="slider-group">
+                                <label>Speed: <span id="speedVal">1.0</span>x</label>
+                                <input type="range" id="speedSlider" min="0.25" max="1.5" step="0.05" value="1.0">
+                            </div>
+
+                            <div class="slider-group">
+                                <label>Zoom</label>
+                                <input type="range" id="zoomSlider" min="10" max="200" step="10" value="20">
+                            </div>
+
+                            <div class="slider-group" style="min-width: 120px;">
+                                <label>Tracks</label>
+                                <div style="display: flex; gap: 10px; align-items: center; height: 20px;">
+                                    <label style="color: white; font-size: 11px; display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                                        <input type="checkbox" id="muteV" checked> Vocals
+                                    </label>
+                                    <label style="color: white; font-size: 11px; display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                                        <input type="checkbox" id="muteG" checked> Guitar
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div style="font-size: 0.9em; margin-left: auto; color: #aaa;">
+                                <small>💡 Drag guitar track to loop</small>
+                            </div>
+                        </div>
+
+                        <!-- Vocals -->
+                        <div class="waveform-box">
+                            <div class="waveform-label">🗣️ Vocals</div>
+                            <div id="waveform-v"></div>
                         </div>
                         
-                        <div class="audio-control">
-                            <label><strong>🗣️ Vocals</strong></label>
-                            <audio id="player-v" controls>
-                                <source src="data:audio/mp3;base64,{vocals_b64}" type="audio/mp3">
-                            </audio>
+                        <!-- Guitar -->
+                        <div class="waveform-box">
+                            <div class="waveform-label">🎸 Guitar</div>
+                            <div id="waveform-g"></div>
                         </div>
-                        
-                        <div class="audio-control">
-                            <label><strong>🎸 Guitar / Backing</strong></label>
-                            <audio id="player-g" controls>
-                                <source src="data:audio/mp3;base64,{guitar_b64}" type="audio/mp3">
-                            </audio>
-                        </div>
-                        
-                        <p><small><em>Audio players attempt to sync automatically. Use controls above.</em></small></p>
                     </div>
                     
                     <!-- Right: Summary -->
                     <div class="summary_col">
                         <h3>📝 Interactive Notes</h3>
                         <div id="summary-content">
-                            <!-- Injected Summary Content -->
                             <h4>Summary</h4>
                             <p>{summary_content.get('summary', 'No summary available.')}</p>
                             
@@ -222,8 +305,7 @@ elif mode == "Library (Review)":
                 
                 points = summary_content.get('key_points', [])
                 for i, point in enumerate(points):
-                    # Mock timestamp logic: distribute points across first 2 mins for demo
-                    # In a real app, LLM would extract "[00:30] Chord change"
+                    # Mock timestamp logic again for demo if real timestamps aren't parsed
                     time_sec = (i + 1) * 15 
                     time_fmt = f"{int(time_sec//60):02d}:{int(time_sec%60):02d}"
                     
@@ -234,62 +316,182 @@ elif mode == "Library (Review)":
                         </li>
                     """
 
-                html_content += """
+                html_content += f"""
                             </ul>
                             <h4>Chords</h4>
-                            <code>""" + ", ".join(summary_content.get('chords', [])) + """</code>
+                            <code>{", ".join(summary_content.get('chords', []))}</code>
                         </div>
                     </div>
                 </div>
 
                 <script>
-                    const vPlayer = document.getElementById('player-v');
-                    const gPlayer = document.getElementById('player-g');
+                    // Base64 Audio Data
+                    const vocalsData = "data:audio/mp3;base64,{vocals_b64}";
+                    const guitarData = "data:audio/mp3;base64,{guitar_b64}";
+
+                    // Components
+                    const playBtn = document.getElementById('playBtn');
+                    const speedSlider = document.getElementById('speedSlider');
+                    const speedVal = document.getElementById('speedVal');
+                    const zoomSlider = document.getElementById('zoomSlider');
+                    const muteV = document.getElementById('muteV');
+                    const muteG = document.getElementById('muteG');
+
+                    // Initialize Wavesurfer Instances
+                    let wsV, wsG;
+                    let isReadyV = false;
+                    let isReadyG = false;
+
+                    // 1. Vocals (Master)
+                    wsV = WaveSurfer.create({{
+                        container: '#waveform-v',
+                        waveColor: '#A855F7',
+                        progressColor: '#7E22CE',
+                        cursorColor: '#7E22CE',
+                        barWidth: 2,
+                        barGap: 1,
+                        barRadius: 2,
+                        height: 100,
+                        normalize: true,
+                        minPxPerSec: 20,
+                    }});
+
+                    // 2. Guitar (Follower + Regions)
+                    wsG = WaveSurfer.create({{
+                        container: '#waveform-g',
+                        waveColor: '#F97316',
+                        progressColor: '#C2410C',
+                        cursorColor: '#C2410C',
+                        barWidth: 2,
+                        barGap: 1,
+                        barRadius: 2,
+                        height: 100,
+                        normalize: true,
+                        minPxPerSec: 20,
+                        plugins: [
+                            WaveSurfer.Regions.create()
+                        ]
+                    }});
+
+                    // Load Audio
+                    wsV.load(vocalsData);
+                    wsG.load(guitarData);
+
+                    // --- Event Listeners & Sync ---
                     
-                    // --- SYNC LOGIC ---
-                    // Simple leader-follower sync. If user plays V, G follows.
+                    wsV.on('ready', () => {{ isReadyV = true; checkReady(); }});
+                    wsG.on('ready', () => {{ isReadyG = true; checkReady(); }});
+
+                    function checkReady() {{
+                        if (isReadyV && isReadyG) {{
+                            console.log("Both tracks ready");
+                        }}
+                    }}
+
+                    // Play/Pause Toggle
+                    playBtn.onclick = () => {{
+                        if (wsV.isPlaying()) {{
+                            wsV.pause();
+                            wsG.pause();
+                            playBtn.textContent = "▶";
+                        }} else {{
+                            wsV.play();
+                            wsG.play();
+                            playBtn.textContent = "⏸";
+                        }}
+                    }};
+
+                    // Sync: Seek
+                    wsV.on('seeking', (currentTime) => {{
+                        wsG.setTime(currentTime);
+                    }});
                     
-                    let isSyncing = false;
+                    // Also sync if user clicks on guitar track
+                    wsG.on('interaction', () => {{
+                        wsV.setTime(wsG.getCurrentTime());
+                    }});
                     
-                    function syncEvent(leader, follower) {
-                        leader.onplay = () => { follower.play(); };
-                        leader.onpause = () => { follower.pause(); };
-                        leader.onseeking = () => { follower.currentTime = leader.currentTime; };
-                        leader.onseeked = () => { follower.currentTime = leader.currentTime; };
-                    }
+                    // Sync: Finish
+                    wsV.on('finish', () => {{
+                        wsG.stop();
+                        playBtn.textContent = "▶";
+                    }});
+
+                    // Speed Control
+                    speedSlider.oninput = function() {{
+                        const speed = parseFloat(this.value);
+                        speedVal.textContent = speed.toFixed(1);
+                        wsV.setPlaybackRate(speed);
+                        wsG.setPlaybackRate(speed);
+                    }};
+
+                    // Zoom Control
+                    zoomSlider.oninput = function() {{
+                        const pxPerSec = parseInt(this.value);
+                        wsV.zoom(pxPerSec);
+                        wsG.zoom(pxPerSec);
+                    }};
                     
-                    // Bi-directional sync is tricky without loops. Let's make Vocal leader for now.
-                    if (vPlayer && gPlayer) {
-                        syncEvent(vPlayer, gPlayer);
-                    }
+                    // Mute Control
+                    // Checkbox checked = sound ON. Unchecked = Muted.
+                    muteV.onchange = function() {{
+                        wsV.setMuted(!this.checked);
+                    }};
                     
-                    // --- SPEED CONTROL ---
-                    function setSpeed(rate, btn) {
-                        if (vPlayer) vPlayer.playbackRate = rate;
-                        if (gPlayer) gPlayer.playbackRate = rate;
+                    muteG.onchange = function() {{
+                        wsG.setMuted(!this.checked);
+                    }};
+
+                    // --- Looping (Regions) ---
+
+                    const wsGRegions = wsG.plugins[0];
+                    
+                    wsGRegions.enableDragSelection({{
+                        color: 'rgba(255, 0, 0, 0.1)',
+                    }});
+
+                    // On Region Loop
+                    wsGRegions.on('region-out', (region) => {{
+                        // When playing exits region, jump back to start
+                        console.log("Region Loop");
+                        wsV.setTime(region.start);
+                        wsG.setTime(region.start);
+                        // Ensure playing continues
+                        if (!wsV.isPlaying()) {{
+                            wsV.play();
+                            wsG.play();
+                            playBtn.textContent = "⏸";
+                        }}
+                    }});
+                    
+                    wsGRegions.on('region-clicked', (region, e) => {{
+                        e.stopPropagation(); // prevent seek
+                        wsV.setTime(region.start);
+                        wsG.setTime(region.start);
+                        wsV.play();
+                        wsG.play();
+                        playBtn.textContent = "⏸";
+                    }});
+
+                    // --- External API ---
+                    window.seekTo = function(seconds) {{
+                        wsV.setTime(seconds);
+                        wsG.setTime(seconds);
+                        wsV.play();
+                        wsG.play();
+                        playBtn.textContent = "⏸";
                         
-                        // Update UI
-                        document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
-                        btn.classList.add('active');
-                    }
-                    
-                    // --- SEEK TO ---
-                    function seekTo(seconds) {
-                        if (vPlayer) {
-                            vPlayer.currentTime = seconds;
-                            vPlayer.play();
-                        }
-                        if (gPlayer) {
-                            gPlayer.currentTime = seconds;
-                        }
-                    }
+                        // Clear active regions if any to avoid getting stuck in a loop from elsewhere
+                        wsGRegions.clearRegions();
+                    }};
+
                 </script>
                 </body>
                 </html>
                 """
-                
-                # Render the HTML Component
-                components.html(html_content, height=600, scrolling=True)
+
+                # Render
+                components.html(html_content, height=800, scrolling=True)
                 
                 st.divider()
                 
