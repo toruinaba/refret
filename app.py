@@ -7,6 +7,7 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 from processor import AudioProcessor
+import licks_manager
 
 # Page Config
 st.set_page_config(page_title="Guitar Lesson Review", page_icon="🎸", layout="wide")
@@ -159,9 +160,16 @@ def get_library_data():
         df = df.sort_values("Date", ascending=False)
     return df
 
+def play_lick(lick):
+    """Callback to play a lick: switch mode and setup looping."""
+    st.session_state.selected_lesson = lick['lesson_dir']
+    st.session_state.auto_loop_start = lick['start']
+    st.session_state.auto_loop_end = lick['end']
+    st.session_state["nav_mode"] = "Library (Review)"
+
 # Sidebar Navigation
 st.sidebar.title("🎸 Guitar Review")
-mode = st.sidebar.radio("Navigation", ["New Lesson (Upload)", "Library (Review)", "Settings"])
+mode = st.sidebar.radio("Navigation", ["New Lesson (Upload)", "Library (Review)", "Lick Library 🎸", "Settings"], key="nav_mode")
 
 
 st.sidebar.info("Upload your guitar lesson recordings to separate tracks and get AI summaries.")
@@ -389,6 +397,21 @@ elif mode == "Library (Review)":
                     with open(original_path, "rb") as f:
                         st.download_button("Download Original (MP3)", f, file_name="original.mp3")
 
+
+
+            # Auto-Loop Logic: Check session state for requested loop
+            auto_loop_start = st.session_state.get("auto_loop_start", None)
+            auto_loop_end = st.session_state.get("auto_loop_end", None)
+            
+            # Clear them so we don't loop on every refresh
+            if "auto_loop_start" in st.session_state:
+                del st.session_state["auto_loop_start"]
+            if "auto_loop_end" in st.session_state:
+                del st.session_state["auto_loop_end"]
+
+            # Get tags for JS autocomplete
+            all_tags_json = json.dumps(get_all_tags())
+
             # Generate Custom HTML for Wavesurfer Player & Interactive Summary
             html_content = f"""
                 <html>
@@ -437,6 +460,22 @@ elif mode == "Library (Review)":
                         transition: background 0.2s;
                     }}
                     .play-btn:hover {{ background: #ff3333; }}
+                    
+                    .action-btn {{
+                        background: #4b8bff;
+                        color: white;
+                        border: none;
+                        padding: 8px 12px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-weight: bold;
+                        font-size: 13px;
+                        display: flex;
+                        align-items: center;
+                        gap: 5px;
+                        transition: background 0.2s;
+                    }}
+                    .action-btn:hover {{ background: #3373e6; }}
 
                     .slider-group {{ display: flex; flex-direction: column; gap: 5px; min-width: 150px; }}
                     .slider-group label {{ font-size: 12px; color: #ccc; }}
@@ -517,6 +556,16 @@ elif mode == "Library (Review)":
                                 <small>💡 Drag guitar track to loop</small>
                             </div>
                         </div>
+                        
+                            <div style="font-size: 0.9em; margin-left: auto; color: #aaa;">
+                                <small>💡 Drag guitar track to loop</small>
+                            </div>
+                        </div>
+                        
+                        <!-- Region Info Display -->
+                        <div id="regionInfo" style="text-align: center; background: #fff; padding: 10px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 20px; font-weight: bold; color: #333;">
+                            Selection: --
+                        </div>
 
                         <!-- Vocals -->
                         <div class="waveform-box">
@@ -592,6 +641,13 @@ elif mode == "Library (Review)":
                 // Base64 Audio Data
                 const vocalsData = "data:audio/mp3;base64,{vocals_b64}";
                 const guitarData = "data:audio/mp3;base64,{guitar_b64}";
+
+                // Auto Loop Params
+                const autoStart = {auto_loop_start if auto_loop_start is not None else 'null'};
+                const autoEnd = {auto_loop_end if auto_loop_end is not None else 'null'};
+                
+                // Tags
+                const availableTags = {all_tags_json};
 
                 // Components
                 const playBtn = document.getElementById('playBtn');
@@ -676,6 +732,25 @@ elif mode == "Library (Review)":
                 function checkReady() {{
                     if (isReadyV && isReadyG) {{
                         console.log("Both tracks ready");
+                        
+                        // Handle Auto-Loop if present
+                        if (autoStart !== null && autoEnd !== null) {{
+                            // Use timeout to ensure robust play?
+                            const wsGRegions = wsG.plugins[0];
+                            wsGRegions.addRegion({{
+                                start: autoStart,
+                                end: autoEnd,
+                                color: "rgba(255, 0, 0, 0.3)",
+                                loop: true
+                            }});
+                            
+                            // Seek and Play
+                            wsV.setTime(autoStart);
+                            wsG.setTime(autoStart);
+                            wsV.play(autoStart);
+                            wsG.play(autoStart);
+                            playBtn.textContent = "⏸";
+                        }}
                     }}
                 }}
 
@@ -772,6 +847,21 @@ elif mode == "Library (Review)":
                     wsGRegions.clearRegions();
                 }};
 
+
+                
+                // --- Region Info Logic ---
+                const regionInfo = document.getElementById('regionInfo');
+
+                if (wsGRegions) {{
+                    const updateInfo = (region) => {{
+                        regionInfo.innerText = `Selection: ${{region.start.toFixed(2)}}s - ${{region.end.toFixed(2)}}s`;
+                    }};
+
+                    wsGRegions.on('region-updated', updateInfo);
+                    wsGRegions.on('region-created', updateInfo);
+                    wsGRegions.on('region-clicked', updateInfo);
+                }}
+
             </script>
             </body>
             </html>
@@ -780,6 +870,37 @@ elif mode == "Library (Review)":
 
             # Render
             components.html(html_content, height=800, scrolling=True)
+
+
+            
+            # --- Save Lick Section (Manual) ---
+            with st.expander("💾 Save Current Loop as Lick", expanded=True):
+                st.caption("Tip: Check the 'Selection' time in the player and enter it below.")
+                with st.form("save_lick_form"):
+                    col_l1, col_l2 = st.columns(2)
+                    with col_l1:
+                        lick_title = st.text_input("Lick Title")
+                    with col_l2:
+                        lick_tags_select = st.multiselect("Tags", options=get_all_tags())
+                        lick_new_tag = st.text_input("New Tag (Optional)")
+                    
+                    col_t1, col_t2 = st.columns(2)
+                    with col_t1:
+                        lick_start = st.number_input("Start Time (sec)", min_value=0.0, step=0.1, format="%.2f")
+                    with col_t2:
+                        lick_end = st.number_input("End Time (sec)", min_value=0.0, step=0.1, format="%.2f")
+                    
+                    if st.form_submit_button("Save to Library"):
+                        if lick_title and (lick_end > lick_start):
+                            final_tags = set(lick_tags_select)
+                            if lick_new_tag:
+                                final_tags.add(lick_new_tag)
+                                save_global_tags(list(final_tags))
+                            
+                            licks_manager.save_lick(st.session_state.selected_lesson, lick_title, list(final_tags), lick_start, lick_end)
+                            st.success("Saved!")
+                        else:
+                            st.error("Invalid input.")
             
             st.divider()
             
@@ -792,6 +913,49 @@ elif mode == "Library (Review)":
                         st.text(f.read())
             else:
                 st.caption("No transcript file found.")
+
+# --- Mode: Lick Library ---
+elif mode == "Lick Library 🎸":
+    st.title("🎸 Lick Library")
+    
+    all_licks = licks_manager.load_licks()
+    
+    # Filter
+    all_tags = sorted(list(set([t for lick in all_licks for t in lick.get("tags", [])])))
+    selected_tags = st.multiselect("Filter by Tags", options=all_tags)
+    
+    if selected_tags:
+        filtered_licks = [l for l in all_licks if any(t in selected_tags for t in l.get("tags", []))]
+    else:
+        filtered_licks = all_licks
+    
+    st.write(f"Showing {len(filtered_licks)} licks")
+    
+    if not filtered_licks:
+        st.info("No licks saved yet. Go to the Player view and save loops as licks!")
+    
+    # Display Grid
+    for lick in filtered_licks:
+        with st.container(border=True):
+            cols = st.columns([0.1, 0.7, 0.2])
+            
+            # Play Button
+            with cols[0]:
+                st.button("▶", key=f"play_lick_{lick['id']}", help="Play Lick", on_click=play_lick, args=(lick,))
+            
+            # Info
+            with cols[1]:
+                st.markdown(f"**{lick['title']}**")
+                st.caption(f"Lesson: {lick['lesson_dir']} | ⏱ {lick['start']}s - {lick['end']}s")
+                # Tags badge style
+                tags_html = " ".join([f"<span style='background:#eee;padding:2px 6px;border-radius:4px;font-size:12px'>{t}</span>" for t in lick['tags']])
+                st.markdown(tags_html, unsafe_allow_html=True)
+                
+            # Delete Button
+            with cols[2]:
+                if st.button("🗑️", key=f"del_lick_{lick['id']}", help="Delete Lick"):
+                    licks_manager.delete_lick(lick['id'])
+                    st.rerun()
 
 # --- Mode 3: Settings ---
 elif mode == "Settings":
