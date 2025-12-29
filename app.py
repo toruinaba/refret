@@ -41,12 +41,12 @@ def get_audio_base64(file_path):
 # Using cache_resource to keep the model loaded, but added ttl to ensure updates propagate during dev
 # We need to hash the config so that if config changes, processor re-inits
 @st.cache_resource(ttl="1h", hash_funcs={dict: lambda d: json.dumps(d, sort_keys=True)}) 
-def get_processor(config):
+def get_processor(config, version=1):
     return AudioProcessor(config)
 
 # Load current config
 current_config = load_config()
-processor = get_processor(current_config)
+processor = get_processor(current_config, version=2) # Increment version to bust cache
 
 # Custom CSS for aesthetics
 st.markdown("""
@@ -210,7 +210,7 @@ if mode == "New Lesson (Upload)":
                     transcript_text, segments = processor.transcribe(vocals_path)
                     
                     st.write("🤖 Generating Summary (LLM)...")
-                    summary_json = processor.summarize(transcript_text)
+                    summary_json = processor.summarize(segments)
                     
                     st.write("💾 Saving Results...")
                     processor.save_results(lesson_dir, segments, transcript_text, summary_json)
@@ -535,6 +535,17 @@ elif mode == "Library (Review)":
                     <div class="summary_col">
                         <h3>📝 Interactive Notes</h3>
                         <div id="summary-content">
+                            """
+            
+            if "error" in summary_content:
+                html_content += f"""
+                    <div style="padding: 10px; background: #fee; color: #c00; border-radius: 5px; margin-bottom: 10px;">
+                        <strong>⚠️ Summary Generation Error:</strong><br>
+                        {summary_content['error']}
+                    </div>
+                """
+            
+            html_content += f"""
                             <h4>Summary</h4>
                             <p>{summary_content.get('summary', 'No summary available.')}</p>
                             
@@ -543,15 +554,29 @@ elif mode == "Library (Review)":
             """
             
             points = summary_content.get('key_points', [])
-            for i, point in enumerate(points):
-                # Mock timestamp logic again for demo if real timestamps aren't parsed
-                time_sec = (i + 1) * 15 
-                time_fmt = f"{int(time_sec//60):02d}:{int(time_sec%60):02d}"
-                
+            for i, point_data in enumerate(points):
+                # Handle both new dict format and old string format
+                if isinstance(point_data, dict):
+                    point_text = point_data.get("point", "")
+                    timestamp_str = point_data.get("timestamp", "00:00")
+                else:
+                    point_text = str(point_data)
+                    timestamp_str = "00:00"
+
+                # Parse timestamp to seconds
+                try:
+                    parts = timestamp_str.split(":")
+                    if len(parts) == 2:
+                        time_sec = int(parts[0]) * 60 + int(parts[1])
+                    else:
+                        time_sec = 0
+                except:
+                    time_sec = 0
+
                 html_content += f"""
                     <li>
-                        <a class="timestamp-link" onclick="seekTo({time_sec})">[{time_fmt}]</a>
-                        {point}
+                        <a class="timestamp-link" onclick="seekTo({time_sec})">[{timestamp_str}]</a>
+                        {point_text}
                     </li>
                 """
 
@@ -783,9 +808,19 @@ elif mode == "Settings":
         # Default Japanese System Prompt
         default_prompt_text = (
             "You are a helpful assistant summarizing a guitar lesson. "
-            "Extract key points, chords mentioned, and techniques practiced. "
-            "Return a JSON object with keys: 'summary', 'key_points' (list), 'chords' (list). "
-            "IMPORTANT: Please write the summary and key points in Japanese."
+            "Step 1: Analyze the provided transcript with timestamps. "
+            "Step 2: Create a concise summary of the lesson content in Japanese. "
+            "Step 3: Extract key learning points. For each point, provide the content in Japanese and the closest timestamp (MM:SS) from the source text. "
+            "Step 4: List any chords mentioned. "
+            "Step 5: Return a valid JSON object strictly following this structure: "
+            "{"
+            "  \"summary\": \"...summary text...\", "
+            "  \"key_points\": [ "
+            "    {\"point\": \"...point text...\", \"timestamp\": \"MM:SS\"}, "
+            "    ... "
+            "  ], "
+            "  \"chords\": [\"Am7\", \"G\", ...] "
+            "}"
         )
         default_prompt = current_config.get("system_prompt", default_prompt_text)
         

@@ -189,7 +189,16 @@ class AudioProcessor:
         model = WhisperModel(model_size, device="cpu", compute_type="int8")
 
         # Explicitly set language to Japanese
-        segments, info = model.transcribe(str(audio_path), beam_size=5, language="ja")
+        # Enable VAD logic to skip silence (crucial for long audio with instrumental parts)
+        # Disable condition_on_previous_text to prevent repetition loops
+        segments, info = model.transcribe(
+            str(audio_path), 
+            beam_size=5, 
+            language="ja",
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=500),
+            condition_on_previous_text=False
+        )
         
         transcript_text = ""
         segments_data = []
@@ -204,11 +213,20 @@ class AudioProcessor:
             
         return transcript_text, segments_data
 
-    def summarize(self, transcript_text):
+    def summarize(self, segments_data):
         """
         Summarize the lesson using OpenAI or Ollama.
         """
         print(f"Summarizing transcript using {self.llm_provider} ({self.llm_model})...")
+        
+        # 1. Format transcript with timestamps for the LLM
+        transcript_with_timestamps = ""
+        for seg in segments_data:
+            start_time = seg["start"]
+            m = int(start_time // 60)
+            s = int(start_time % 60)
+            timestamp = f"{m:02d}:{s:02d}"
+            transcript_with_timestamps += f"[{timestamp}] {seg['text']}\n"
         
         client = None
         
@@ -225,18 +243,35 @@ class AudioProcessor:
                     return {"error": "No OpenAI API Key found", "summary": "N/A"}
                 client = openai.OpenAI(api_key=self.api_key)
 
-            system_prompt = self.config.get("system_prompt", "You are a helpful assistant summarizing a guitar lesson. Extract key points, chords mentioned, and techniques practiced. Return a JSON object with keys: 'summary', 'key_points' (list), 'chords' (list).")
+            # Updated prompt to ask for timestamps
+            system_prompt = self.config.get("system_prompt", (
+                "You are a helpful assistant summarizing a guitar lesson. "
+                "Step 1: Analyze the provided transcript with timestamps. "
+                "Step 2: Create a concise summary of the lesson content in Japanese. "
+                "Step 3: Extract key learning points. For each point, provide the content in Japanese and the closest timestamp (MM:SS) from the source text. "
+                "Step 4: List any chords mentioned. "
+                "Step 5: Return a valid JSON object strictly following this structure: "
+                "{"
+                "  \"summary\": \"...summary text...\", "
+                "  \"key_points\": [ "
+                "    {\"point\": \"...point text...\", \"timestamp\": \"MM:SS\"}, "
+                "    ... "
+                "  ], "
+                "  \"chords\": [\"Am7\", \"G\", ...] "
+                "}"
+            ))
 
             response = client.chat.completions.create(
                 model=self.llm_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Here is the transcript of the guitar lesson:\n\n{transcript_text[:12000]}"} 
+                    {"role": "user", "content": f"Here is the transcript of the guitar lesson with timestamps:\n\n{transcript_with_timestamps[:15000]}"} 
                 ],
                 response_format={"type": "json_object"} if self.llm_provider == "openai" else None
             )
             
             content = response.choices[0].message.content
+            print(f"DEBUG: Raw LLM Response (First 500 chars): {content[:500]}...")
             
             # Additional cleanup for Ollama if it returns markdown code blocks
             if self.llm_provider == "ollama":
@@ -248,7 +283,7 @@ class AudioProcessor:
             return json.loads(content)
         except Exception as e:
             print(f"LLM error: {e}")
-            return {"error": str(e)}
+            return {"error": str(e), "raw_response": content if 'content' in locals() else "N/A"}
 
     def prepare_lesson_upload(self, uploaded_file, lesson_title):
         """
@@ -355,7 +390,7 @@ class AudioProcessor:
         transcript_text, segments = self.transcribe(vocals_path)
         
         # 3. Summarize
-        summary_json = self.summarize(transcript_text)
+        summary_json = self.summarize(segments)
         
         # 4. Save
         self.save_results(lesson_dir, segments, transcript_text, summary_json)
