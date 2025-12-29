@@ -7,3 +7,4 @@ torchaudio
 python-dotenv
 av>=13.0.0
 soundfile
+pandas

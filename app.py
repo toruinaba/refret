@@ -3,6 +3,8 @@ import os
 import json
 import base64
 import streamlit.components.v1 as components
+import pandas as pd
+from datetime import datetime
 from pathlib import Path
 from processor import AudioProcessor
 
@@ -62,98 +64,323 @@ st.markdown("""
         border-left: 5px solid #ff4b4b;
     }
     </style>
+    </style>
     """, unsafe_allow_html=True)
+
+# --- Helper Functions (Global) ---
+data_dir = Path("data")
+data_dir.mkdir(exist_ok=True)
+TAGS_FILE = data_dir / "tags.json"
+
+def load_global_tags():
+    """Load global tags list from json."""
+    if TAGS_FILE.exists():
+        try:
+            with open(TAGS_FILE, "r") as f:
+                return set(json.load(f))
+        except:
+            return set()
+    return set()
+
+def save_global_tags(new_tags):
+    """Update global tags file with new tags."""
+    current_tags = load_global_tags()
+    updated = current_tags.union(set(new_tags))
+    with open(TAGS_FILE, "w") as f:
+        json.dump(sorted(list(updated)), f, indent=4)
+
+def load_metadata(lesson_path):
+    """Load metadata.json or create default if missing."""
+    meta_file = lesson_path / "metadata.json"
+    if meta_file.exists():
+        with open(meta_file, "r") as f:
+            return json.load(f)
+    else:
+        # Default metadata
+        creation_time = datetime.fromtimestamp(lesson_path.stat().st_ctime).strftime('%Y-%m-%d')
+        default_meta = {
+            "tags": [],
+            "memo": "",
+            "created_at": creation_time
+        }
+        return default_meta
+
+def save_metadata(lesson_path, meta_data):
+    """Save metadata to json."""
+    with open(lesson_path / "metadata.json", "w") as f:
+        json.dump(meta_data, f, indent=4)
+    
+    # Update global tags
+    if "tags" in meta_data:
+        save_global_tags(meta_data["tags"])
+
+    # Clear cache to refresh dashboard
+    get_library_data.clear()
+
+def get_all_tags():
+    """Scan all lessons AND tags.json to find unique tags."""
+    if not data_dir.exists():
+        return []
+    
+    # 1. Start with global tags registry
+    tags = load_global_tags()
+    
+    # 2. Scan existing lessons (in case of manual edits or out of sync)
+    for lesson_dir in [d for d in data_dir.iterdir() if d.is_dir()]:
+        meta = load_metadata(lesson_dir)
+        for t in meta.get("tags", []):
+            tags.add(t)
+            
+    return sorted(list(tags))
+
+@st.cache_data
+def get_library_data():
+    """Scan all lessons and return a DataFrame."""
+    rows = []
+    if not data_dir.exists():
+        return pd.DataFrame()
+    
+    for lesson_dir in [d for d in data_dir.iterdir() if d.is_dir()]:
+        meta = load_metadata(lesson_dir)
+        rows.append({
+            "Lesson ID": lesson_dir.name, # Hidden or used for key
+            "Date": meta.get("created_at", ""),
+            "Title": lesson_dir.name, # Use folder name as title. Ideally meta title but fallback to folder
+            "Tags": ", ".join(meta.get("tags", [])),
+            "Memo": meta.get("memo", "")
+        })
+    
+    if not rows:
+        return pd.DataFrame()
+        
+    df = pd.DataFrame(rows)
+    # Sort by Date descending
+    if "Date" in df.columns:
+        df = df.sort_values("Date", ascending=False)
+    return df
 
 # Sidebar Navigation
 st.sidebar.title("🎸 Guitar Review")
 mode = st.sidebar.radio("Navigation", ["New Lesson (Upload)", "Library (Review)", "Settings"])
+
 
 st.sidebar.info("Upload your guitar lesson recordings to separate tracks and get AI summaries.")
 
 # --- Mode 1: New Lesson ---
 if mode == "New Lesson (Upload)":
     st.title("Upload New Lesson")
+    st.write("Upload your guitar lesson recordings to separate tracks and get AI summaries.")
     
-    with st.container():
-        st.write("Upload your lesson recording (WAV/MP3) to begin processing.")
-        
-        uploaded_file = st.file_uploader("Choose an audio file", type=["wav", "mp3", "m4a"])
-        lesson_title = st.text_input("Lesson Title", placeholder="e.g., Blues Improv Week 1")
-        
-        if st.button("Start Processing", type="primary"):
-            if uploaded_file and lesson_title:
-                try:
-                    with st.spinner("Processing... This may take a while (Separating Audio -> Transcribing -> Summarizing)"):
-                        # Process
-                        output_dir = processor.process_lesson(uploaded_file, lesson_title)
+    uploaded_file = st.file_uploader("Upload Audio (MP3/WAV/M4A)", type=["mp3", "wav", "m4a"])
+    
+    # Metadata Inputs for new lesson
+    with st.expander("📝 Add Metadata (Optional)", expanded=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            input_title = st.text_input("Lesson Title (Folder Name)", value="My_Lesson")
+        with col2:
+            # Tags: Allow selecting existing or adding new
+            all_existing_tags = get_all_tags()
+            
+            # Custom Tag Input to add to options
+            new_tag_created = st.text_input("Create New Tag (Press Enter to add to list)")
+            if new_tag_created and new_tag_created not in all_existing_tags:
+                all_existing_tags.append(new_tag_created)
+            
+            input_tags = st.multiselect("Select Tags", options=all_existing_tags, default=[new_tag_created] if new_tag_created else [])
+
+        input_memo = st.text_area("Memo (Markdown supported)", height=100)
+
+    if st.button("Start Processing", type="primary"):
+        if uploaded_file and input_title:
+            try:
+                with st.status("Processing...", expanded=True) as status:
+                    st.write("Initializing...")
                     
-                    st.success(f"Processing Complete! Saved to {output_dir}")
+                    # Process
+                    st.write("Converting & Separating audio...")
+                    # Use input_title for folder name
+                    lesson_dir = processor.process_lesson(uploaded_file, input_title)
+                    
+                    st.write("Transcribing & Summarizing...")
+                    # (process_lesson does all this)
+                    
+                    # Save Metadata
+                    st.write("Saving Metadata...")
+                    meta = {
+                        "tags": input_tags,
+                        "memo": input_memo,
+                        "created_at": datetime.now().strftime('%Y-%m-%d')
+                    }
+                    save_metadata(lesson_dir, meta)
+                    
+                    status.update(label="Complete!", state="complete", expanded=False)
+                    st.success(f"Lesson '{lesson_dir.name}' processed successfully!")
                     st.balloons()
                     st.info("Go to 'Library (Review)' to see your results.")
                     
-                except Exception as e:
-                    st.error(f"An error occurred: {e}")
-            else:
-                st.warning("Please upload a file and provide a title.")
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
+        else:
+            st.warning("Please upload a file and provide a title.")
 
 # --- Mode 2: Library ---
 elif mode == "Library (Review)":
     st.title("Lesson Library")
     
-    data_dir = Path("data")
     if not data_dir.exists():
         st.warning("No data directory found.")
     else:
-        # List subdirectories
-        lessons = [d.name for d in data_dir.iterdir() if d.is_dir()]
-        lessons.sort()
-        
-        if not lessons:
-            st.info("No lessons found. Go to 'New Lesson' to add one.")
-        else:
-            selected_lesson = st.selectbox("Select a Lesson", lessons)
+        # Initialize session state for navigation
+        if "selected_lesson" not in st.session_state:
+            st.session_state.selected_lesson = None
+
+        # --- STATE A: DASHBOARD (LIST VIEW) ---
+        if st.session_state.selected_lesson is None:
             
-            if selected_lesson:
-                lesson_path = data_dir / selected_lesson
+            # 1. Search Bar
+            search_query = st.text_input("🔍 Search Lessons", placeholder="Filter by title, tags, or memo...")
+            
+            # 2. Get Data
+            df = get_library_data()
+            
+            if not df.empty:
+                # Filter Logic
+                if search_query:
+                    # Robust search across all columns
+                    try:
+                        mask = df.apply(lambda x: x.astype(str).str.contains(search_query, case=False, regex=False).any(), axis=1)
+                        df_display = df[mask]
+                    except Exception as e:
+                        st.error(f"Search error: {e}")
+                        df_display = df
+                else:
+                    df_display = df
+
+                # 3. Interactive Table
+                st.caption(f"Showing {len(df_display)} lessons")
                 
-                # Load Audio Files
-                vocals_path = lesson_path / "vocals.mp3"
-                guitar_path = lesson_path / "guitar.mp3"
-                # Check for mp3 original, fallback to wav if old lesson
-                original_path = lesson_path / "original.mp3"
-                if not original_path.exists():
-                     original_path = lesson_path / "original.wav"
+                event = st.dataframe(
+                    df_display,
+                    width="stretch",
+                    hide_index=True,
+                    selection_mode="single-row",
+                    on_select="rerun",
+                    column_config={
+                        "Lesson ID": None, # Hide ID
+                        "Date": st.column_config.DateColumn("Date", format="YYYY-MM-DD"),
+                        "Title": st.column_config.TextColumn("Title", width="medium"),
+                        "Tags": st.column_config.TextColumn("Tags", width="medium"),
+                        "Memo": None, # HIDE MEMO from table
+                    },
+                    key="library_dataframe" 
+                )
                 
-                vocals_b64 = get_audio_base64(vocals_path) if vocals_path.exists() else None
-                guitar_b64 = get_audio_base64(guitar_path) if guitar_path.exists() else None
+                # Handle Selection
+                if event.selection and event.selection["rows"]:
+                    selected_index = event.selection["rows"][0]
+                    selected_id = df_display.iloc[selected_index]["Lesson ID"]
+                    st.session_state.selected_lesson = selected_id
+                    st.rerun()
+            else:
+                st.info("No lessons found. Go to 'New Lesson' to upload one.")
 
-                # Load Summary
-                summary_file = lesson_path / "summary.json"
-                summary_content = {}
-                if summary_file.exists():
-                    with open(summary_file, "r") as f:
-                        try:
-                            summary_content = json.load(f)
-                        except json.JSONDecodeError:
-                            st.error("Error reading summary file.")
+        # --- STATE B: DETAIL VIEW (PLAYER) ---
+        else:
+            selected_lesson = st.session_state.selected_lesson
+            lesson_path = data_dir / selected_lesson
+            
+            # Navigation
+            if st.button("← Back to Library"):
+                st.session_state.selected_lesson = None
+                st.rerun()
+            
+            st.header(f"🎸 {selected_lesson}")
+            
+            # Load Audio Files
+            vocals_path = lesson_path / "vocals.mp3"
+            guitar_path = lesson_path / "guitar.mp3"
+            original_path = lesson_path / "original.mp3"
+            if not original_path.exists():
+                    original_path = lesson_path / "original.wav"
+            
+            vocals_b64 = get_audio_base64(vocals_path) if vocals_path.exists() else None
+            guitar_b64 = get_audio_base64(guitar_path) if guitar_path.exists() else None
+            
+            # Load Summary
+            summary_file = lesson_path / "summary.json"
+            summary_content = {}
+            if summary_file.exists():
+                with open(summary_file, "r") as f:
+                    try:
+                        summary_content = json.load(f)
+                    except json.JSONDecodeError:
+                        st.error("Error reading summary file.")
 
-                # Download Buttons
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    if vocals_path.exists():
-                        with open(vocals_path, "rb") as f:
-                            st.download_button("Download Vocals (MP3)", f, file_name="vocals.mp3")
-                with col2:
-                    if guitar_path.exists():
-                        with open(guitar_path, "rb") as f:
-                            st.download_button("Download Guitar (MP3)", f, file_name="guitar.mp3")
-                with col3:
-                    if original_path.exists():
-                        with open(original_path, "rb") as f:
-                            st.download_button("Download Original (MP3)", f, file_name="original.mp3")
+            # Load Metadata
+            metadata = load_metadata(lesson_path)
 
-                # Generate Custom HTML for Wavesurfer Player & Interactive Summary
-                html_content = f"""
+            # --- Displays Memo (Markdown) ---
+            if metadata.get("memo"):
+                with st.expander("📝 My Memo", expanded=True):
+                    st.markdown(metadata["memo"])
+
+            # Layout: Player (Main) + Metadata Editor (Sidebar/Column)
+            
+            # --- Metadata Editor (Sidebar) ---
+            with st.sidebar:
+                st.subheader("✏️ Lesson Metadata")
+                with st.form("metadata_form"):
+                    # Tags
+                    current_tags = metadata.get("tags", [])
+                    
+                    # Get all tags for autocomplete
+                    all_existing_tags = get_all_tags()
+                    
+                    # Dynamic Tag Creation
+                    new_tag_created = st.text_input("Create New Tag (Save to add)", key="new_tag_sidebar")
+                    
+                    # If a new tag is entered, add it to the list of options and pre-select it
+                    if new_tag_created and new_tag_created not in all_existing_tags:
+                        all_existing_tags.append(new_tag_created)
+                        # Ensure the new tag is in the default selection if user typed it
+                        if new_tag_created not in current_tags:
+                            current_tags.append(new_tag_created)
+
+                    available_tags = sorted(list(set(all_existing_tags))) # Use all_existing_tags which now includes the new one
+                    
+                    updated_tags = st.multiselect("Tags", options=available_tags, default=current_tags)
+                    
+                    # Memo (Markdown)
+                    st.caption("Markdown supported")
+                    updated_memo = st.text_area("Memo", value=metadata.get("memo", ""), height=150, help="Markdown syntax supported")
+                    
+                    if st.form_submit_button("Save Metadata"):
+                        metadata["tags"] = updated_tags
+                        metadata["memo"] = updated_memo
+                        save_metadata(lesson_path, metadata)
+                        st.success("Saved!")
+                        st.rerun()
+
+            # --- Player Component ---
+            
+            # Download Buttons
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if vocals_path.exists():
+                    with open(vocals_path, "rb") as f:
+                        st.download_button("Download Vocals (MP3)", f, file_name="vocals.mp3")
+            with col2:
+                if guitar_path.exists():
+                    with open(guitar_path, "rb") as f:
+                        st.download_button("Download Guitar (MP3)", f, file_name="guitar.mp3")
+            with col3:
+                if original_path.exists():
+                    with open(original_path, "rb") as f:
+                        st.download_button("Download Original (MP3)", f, file_name="original.mp3")
+
+            # Generate Custom HTML for Wavesurfer Player & Interactive Summary
+            html_content = f"""
                 <html>
                 <head>
                 <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
@@ -301,209 +528,203 @@ elif mode == "Library (Review)":
                             
                             <h4>Key Points</h4>
                             <ul>
-                """
+            """
+            
+            points = summary_content.get('key_points', [])
+            for i, point in enumerate(points):
+                # Mock timestamp logic again for demo if real timestamps aren't parsed
+                time_sec = (i + 1) * 15 
+                time_fmt = f"{int(time_sec//60):02d}:{int(time_sec%60):02d}"
                 
-                points = summary_content.get('key_points', [])
-                for i, point in enumerate(points):
-                    # Mock timestamp logic again for demo if real timestamps aren't parsed
-                    time_sec = (i + 1) * 15 
-                    time_fmt = f"{int(time_sec//60):02d}:{int(time_sec%60):02d}"
-                    
-                    html_content += f"""
-                        <li>
-                            <a class="timestamp-link" onclick="seekTo({time_sec})">[{time_fmt}]</a>
-                            {point}
-                        </li>
-                    """
-
                 html_content += f"""
-                            </ul>
-                            <h4>Chords</h4>
-                            <code>{", ".join(summary_content.get('chords', []))}</code>
-                        </div>
+                    <li>
+                        <a class="timestamp-link" onclick="seekTo({time_sec})">[{time_fmt}]</a>
+                        {point}
+                    </li>
+                """
+
+            html_content += f"""
+                        </ul>
+                        <h4>Chords</h4>
+                        <code>{", ".join(summary_content.get('chords', []))}</code>
                     </div>
                 </div>
+            </div>
 
-                <script>
-                    // Base64 Audio Data
-                    const vocalsData = "data:audio/mp3;base64,{vocals_b64}";
-                    const guitarData = "data:audio/mp3;base64,{guitar_b64}";
+            <script>
+                // Base64 Audio Data
+                const vocalsData = "data:audio/mp3;base64,{vocals_b64}";
+                const guitarData = "data:audio/mp3;base64,{guitar_b64}";
 
-                    // Components
-                    const playBtn = document.getElementById('playBtn');
-                    const speedSlider = document.getElementById('speedSlider');
-                    const speedVal = document.getElementById('speedVal');
-                    const zoomSlider = document.getElementById('zoomSlider');
-                    const muteV = document.getElementById('muteV');
-                    const muteG = document.getElementById('muteG');
+                // Components
+                const playBtn = document.getElementById('playBtn');
+                const speedSlider = document.getElementById('speedSlider');
+                const speedVal = document.getElementById('speedVal');
+                const zoomSlider = document.getElementById('zoomSlider');
+                const muteV = document.getElementById('muteV');
+                const muteG = document.getElementById('muteG');
 
-                    // Initialize Wavesurfer Instances
-                    let wsV, wsG;
-                    let isReadyV = false;
-                    let isReadyG = false;
+                // Initialize Wavesurfer Instances
+                let wsV, wsG;
+                let isReadyV = false;
+                let isReadyG = false;
 
-                    // 1. Vocals (Master)
-                    wsV = WaveSurfer.create({{
-                        container: '#waveform-v',
-                        waveColor: '#A855F7',
-                        progressColor: '#7E22CE',
-                        cursorColor: '#7E22CE',
-                        barWidth: 2,
-                        barGap: 1,
-                        barRadius: 2,
-                        height: 100,
-                        normalize: true,
-                        minPxPerSec: 20,
-                    }});
+                // 1. Vocals (Master)
+                wsV = WaveSurfer.create({{
+                    container: '#waveform-v',
+                    waveColor: '#A855F7',
+                    progressColor: '#7E22CE',
+                    cursorColor: '#7E22CE',
+                    barWidth: 2,
+                    barGap: 1,
+                    barRadius: 2,
+                    height: 100,
+                    normalize: true,
+                    minPxPerSec: 20,
+                }});
 
-                    // 2. Guitar (Follower + Regions)
-                    wsG = WaveSurfer.create({{
-                        container: '#waveform-g',
-                        waveColor: '#F97316',
-                        progressColor: '#C2410C',
-                        cursorColor: '#C2410C',
-                        barWidth: 2,
-                        barGap: 1,
-                        barRadius: 2,
-                        height: 100,
-                        normalize: true,
-                        minPxPerSec: 20,
-                        plugins: [
-                            WaveSurfer.Regions.create()
-                        ]
-                    }});
+                // 2. Guitar (Follower + Regions)
+                wsG = WaveSurfer.create({{
+                    container: '#waveform-g',
+                    waveColor: '#F97316',
+                    progressColor: '#C2410C',
+                    cursorColor: '#C2410C',
+                    barWidth: 2,
+                    barGap: 1,
+                    barRadius: 2,
+                    height: 100,
+                    normalize: true,
+                    minPxPerSec: 20,
+                    plugins: [
+                        WaveSurfer.Regions.create()
+                    ]
+                }});
 
-                    // Load Audio
-                    wsV.load(vocalsData);
-                    wsG.load(guitarData);
+                // Load Audio
+                wsV.load(vocalsData);
+                wsG.load(guitarData);
 
-                    // --- Event Listeners & Sync ---
-                    
-                    wsV.on('ready', () => {{ isReadyV = true; checkReady(); }});
-                    wsG.on('ready', () => {{ isReadyG = true; checkReady(); }});
+                // --- Event Listeners & Sync ---
+                
+                wsV.on('ready', () => {{ isReadyV = true; checkReady(); }});
+                wsG.on('ready', () => {{ isReadyG = true; checkReady(); }});
 
-                    function checkReady() {{
-                        if (isReadyV && isReadyG) {{
-                            console.log("Both tracks ready");
-                        }}
+                function checkReady() {{
+                    if (isReadyV && isReadyG) {{
+                        console.log("Both tracks ready");
                     }}
+                }}
 
-                    // Play/Pause Toggle
-                    playBtn.onclick = () => {{
-                        if (wsV.isPlaying()) {{
-                            wsV.pause();
-                            wsG.pause();
-                            playBtn.textContent = "▶";
-                        }} else {{
-                            wsV.play();
-                            wsG.play();
-                            playBtn.textContent = "⏸";
-                        }}
-                    }};
-
-                    // Sync: Seek
-                    wsV.on('seeking', (currentTime) => {{
-                        wsG.setTime(currentTime);
-                    }});
-                    
-                    // Also sync if user clicks on guitar track
-                    wsG.on('interaction', () => {{
-                        wsV.setTime(wsG.getCurrentTime());
-                    }});
-                    
-                    // Sync: Finish
-                    wsV.on('finish', () => {{
-                        wsG.stop();
+                // Play/Pause Toggle
+                playBtn.onclick = () => {{
+                    if (wsV.isPlaying()) {{
+                        wsV.pause();
+                        wsG.pause();
                         playBtn.textContent = "▶";
-                    }});
-
-                    // Speed Control
-                    speedSlider.oninput = function() {{
-                        const speed = parseFloat(this.value);
-                        speedVal.textContent = speed.toFixed(1);
-                        wsV.setPlaybackRate(speed);
-                        wsG.setPlaybackRate(speed);
-                    }};
-
-                    // Zoom Control
-                    zoomSlider.oninput = function() {{
-                        const pxPerSec = parseInt(this.value);
-                        wsV.zoom(pxPerSec);
-                        wsG.zoom(pxPerSec);
-                    }};
-                    
-                    // Mute Control
-                    // Checkbox checked = sound ON. Unchecked = Muted.
-                    muteV.onchange = function() {{
-                        wsV.setMuted(!this.checked);
-                    }};
-                    
-                    muteG.onchange = function() {{
-                        wsG.setMuted(!this.checked);
-                    }};
-
-                    // --- Looping (Regions) ---
-
-                    const wsGRegions = wsG.plugins[0];
-                    
-                    wsGRegions.enableDragSelection({{
-                        color: 'rgba(255, 0, 0, 0.1)',
-                    }});
-
-                    // On Region Loop
-                    wsGRegions.on('region-out', (region) => {{
-                        // When playing exits region, jump back to start
-                        console.log("Region Loop");
-                        wsV.setTime(region.start);
-                        wsG.setTime(region.start);
-                        // Ensure playing continues
-                        if (!wsV.isPlaying()) {{
-                            wsV.play();
-                            wsG.play();
-                            playBtn.textContent = "⏸";
-                        }}
-                    }});
-                    
-                    wsGRegions.on('region-clicked', (region, e) => {{
-                        e.stopPropagation(); // prevent seek
-                        wsV.setTime(region.start);
-                        wsG.setTime(region.start);
+                    }} else {{
                         wsV.play();
                         wsG.play();
                         playBtn.textContent = "⏸";
-                    }});
+                    }}
+                }};
 
-                    // --- External API ---
-                    window.seekTo = function(seconds) {{
-                        wsV.setTime(seconds);
-                        wsG.setTime(seconds);
+                // Sync: Seek
+                wsV.on('seeking', (currentTime) => {{
+                    wsG.setTime(currentTime);
+                }});
+                
+                // Also sync if user clicks on guitar track
+                wsG.on('interaction', () => {{
+                    wsV.setTime(wsG.getCurrentTime());
+                }});
+                
+                // Sync: Finish
+                wsV.on('finish', () => {{
+                    wsG.stop();
+                    playBtn.textContent = "▶";
+                }});
+
+                // Speed Control
+                speedSlider.oninput = function() {{
+                    const speed = parseFloat(this.value);
+                    speedVal.textContent = speed.toFixed(1);
+                    wsV.setPlaybackRate(speed);
+                    wsG.setPlaybackRate(speed);
+                }};
+
+                // Zoom Control
+                zoomSlider.oninput = function() {{
+                    const pxPerSec = parseInt(this.value);
+                    wsV.zoom(pxPerSec);
+                    wsG.zoom(pxPerSec);
+                }};
+                
+                // Mute Control
+                muteV.onchange = function() {{
+                    wsV.setMuted(!this.checked);
+                }};
+                
+                muteG.onchange = function() {{
+                    wsG.setMuted(!this.checked);
+                }};
+
+                // --- Looping (Regions) ---
+                const wsGRegions = wsG.plugins[0];
+                
+                wsGRegions.enableDragSelection({{
+                    color: 'rgba(255, 0, 0, 0.1)',
+                }});
+
+                // On Region Loop
+                wsGRegions.on('region-out', (region) => {{
+                    console.log("Region Loop");
+                    wsV.setTime(region.start);
+                    wsG.setTime(region.start);
+                    if (!wsV.isPlaying()) {{
                         wsV.play();
                         wsG.play();
                         playBtn.textContent = "⏸";
-                        
-                        // Clear active regions if any to avoid getting stuck in a loop from elsewhere
-                        wsGRegions.clearRegions();
-                    }};
-
-                </script>
-                </body>
-                </html>
-                """
-
-                # Render
-                components.html(html_content, height=800, scrolling=True)
+                    }}
+                }});
                 
-                st.divider()
-                
-                # Transcript
-                st.subheader("📜 Full Transcript")
-                transcript_file = lesson_path / "transcript.txt"
-                if transcript_file.exists():
-                    with st.expander("Show Transcript", expanded=False):
-                        with open(transcript_file, "r") as f:
-                            st.text(f.read())
-                else:
-                    st.caption("No transcript file found.")
+                wsGRegions.on('region-clicked', (region, e) => {{
+                    e.stopPropagation();
+                    wsV.setTime(region.start);
+                    wsG.setTime(region.start);
+                    wsV.play();
+                    wsG.play();
+                    playBtn.textContent = "⏸";
+                }});
+
+                // --- External API ---
+                window.seekTo = function(seconds) {{
+                    wsV.setTime(seconds);
+                    wsG.setTime(seconds);
+                    wsV.play();
+                    wsG.play();
+                    playBtn.textContent = "⏸";
+                    wsGRegions.clearRegions();
+                }};
+
+            </script>
+            </body>
+            </html>
+            """
+
+            # Render
+            components.html(html_content, height=800, scrolling=True)
+            
+            st.divider()
+            
+            # Transcript
+            st.subheader("📜 Full Transcript")
+            transcript_file = lesson_path / "transcript.txt"
+            if transcript_file.exists():
+                with st.expander("Show Transcript", expanded=False):
+                    with open(transcript_file, "r") as f:
+                        st.text(f.read())
+            else:
+                st.caption("No transcript file found.")
 
 # --- Mode 3: Settings ---
 elif mode == "Settings":
