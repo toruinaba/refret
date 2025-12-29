@@ -13,8 +13,24 @@ from faster_whisper import WhisperModel
 import openai
 from dotenv import load_dotenv
 
+# LangChain & Pydantic
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+from typing import List, Optional
+
 # Load environment variables
 load_dotenv()
+
+# --- Pydantic Models for Structured Output ---
+class KeyPoint(BaseModel):
+    point: str = Field(description="The key learning point or topic content in Japanese")
+    timestamp: str = Field(description="The closest timestamp in MM:SS format from the source text")
+
+class LessonSummary(BaseModel):
+    summary: str = Field(description="Concise summary of the lesson content in Japanese")
+    key_points: List[KeyPoint] = Field(description="List of key learning points with timestamps")
+    chords: List[str] = Field(description="List of chord names mentioned (e.g. Am7, G)")
+
 
 class AudioProcessor:
     def __init__(self, config=None):
@@ -215,11 +231,11 @@ class AudioProcessor:
 
     def summarize(self, segments_data):
         """
-        Summarize the lesson using OpenAI or Ollama.
+        Summarize the lesson using LangChain Structured Output (OpenAI) or Manual (Ollama).
         """
         print(f"Summarizing transcript using {self.llm_provider} ({self.llm_model})...")
         
-        # 1. Format transcript with timestamps for the LLM
+        # 1. Format transcript with timestamps
         transcript_with_timestamps = ""
         for seg in segments_data:
             start_time = seg["start"]
@@ -228,62 +244,72 @@ class AudioProcessor:
             timestamp = f"{m:02d}:{s:02d}"
             transcript_with_timestamps += f"[{timestamp}] {seg['text']}\n"
         
-        client = None
+        # 2. Construction System Instruction
+        system_instruction = (
+            "You are a helpful assistant summarizing a guitar lesson. "
+            "Analyze the transcript and produce a concise summary in Japanese. "
+            "Extract key learning points with their closest timestamps in [MM:SS] format. "
+            "List chords mentioned. "
+            "Output must be in Japanese."
+        )
         
         try:
-            if self.llm_provider == "ollama":
+            if self.llm_provider == "openai":
+                if not self.api_key:
+                    return {"error": "No OpenAI API Key found", "summary": "N/A"}
+                
+                # Use LangChain Structured Output
+                llm = ChatOpenAI(
+                    model=self.llm_model, 
+                    api_key=self.api_key,
+                    temperature=0
+                )
+                
+                structured_llm = llm.with_structured_output(LessonSummary)
+                
+                # Invoke
+                response = structured_llm.invoke([
+                    ("system", system_instruction),
+                    ("human", f"Here is the transcript:\n\n{transcript_with_timestamps[:15000]}")
+                ])
+                
+                # Validated pydantic object to dict
+                return response.model_dump()
+
+            else:
+                # Fallback for Ollama (Manual JSON)
                 # Connect to local Ollama instance
                 client = openai.OpenAI(
                     base_url="http://localhost:11434/v1",
-                    api_key="ollama" # Required but ignored
+                    api_key="ollama" 
                 )
-            else:
-                # Default to OpenAI
-                if not self.api_key:
-                    return {"error": "No OpenAI API Key found", "summary": "N/A"}
-                client = openai.OpenAI(api_key=self.api_key)
-
-            # Updated prompt to ask for timestamps
-            system_prompt = self.config.get("system_prompt", (
-                "You are a helpful assistant summarizing a guitar lesson. "
-                "Step 1: Analyze the provided transcript with timestamps. "
-                "Step 2: Create a concise summary of the lesson content in Japanese. "
-                "Step 3: Extract key learning points. For each point, provide the content in Japanese and the closest timestamp (MM:SS) from the source text. "
-                "Step 4: List any chords mentioned. "
-                "Step 5: Return a valid JSON object strictly following this structure: "
-                "{"
-                "  \"summary\": \"...summary text...\", "
-                "  \"key_points\": [ "
-                "    {\"point\": \"...point text...\", \"timestamp\": \"MM:SS\"}, "
-                "    ... "
-                "  ], "
-                "  \"chords\": [\"Am7\", \"G\", ...] "
-                "}"
-            ))
-
-            response = client.chat.completions.create(
-                model=self.llm_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Here is the transcript of the guitar lesson with timestamps:\n\n{transcript_with_timestamps[:15000]}"} 
-                ],
-                response_format={"type": "json_object"} if self.llm_provider == "openai" else None
-            )
-            
-            content = response.choices[0].message.content
-            print(f"DEBUG: Raw LLM Response (First 500 chars): {content[:500]}...")
-            
-            # Additional cleanup for Ollama if it returns markdown code blocks
-            if self.llm_provider == "ollama":
+                
+                # Manual Prompt for Ollama
+                prompt = self.config.get("system_prompt", system_instruction + " Return JSON.")
+                
+                response = client.chat.completions.create(
+                    model=self.llm_model,
+                    messages=[
+                        {"role": "system", "content": prompt},
+                        {"role": "user", "content": f"Transcript:\n\n{transcript_with_timestamps[:12000]}"} 
+                    ]
+                )
+                content = response.choices[0].message.content
+                print(f"DEBUG: Raw Ollama Response: {content[:500]}...")
+                
+                # Cleanup
                 if "```json" in content:
                     content = content.split("```json")[1].split("```")[0]
                 elif "```" in content:
                     content = content.split("```")[1].split("```")[0]
-            
-            return json.loads(content)
+                
+                return json.loads(content)
+
         except Exception as e:
             print(f"LLM error: {e}")
-            return {"error": str(e), "raw_response": content if 'content' in locals() else "N/A"}
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e), "raw_response": str(e)}
 
     def prepare_lesson_upload(self, uploaded_file, lesson_title):
         """
