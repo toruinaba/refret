@@ -17,22 +17,45 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class AudioProcessor:
-    def __init__(self):
+    def __init__(self, config=None):
         self.data_dir = Path("data")
         self.data_dir.mkdir(exist_ok=True)
         
-        # Configure LLM
-        self.llm_provider = os.getenv("LLM_PROVIDER", "openai").lower()
-        self.llm_model = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
-        self.api_key = os.getenv("OPENAI_API_KEY")
+        # Default Config from Env / Defaults
+        self.config = {
+            "llm_provider": os.getenv("LLM_PROVIDER", "openai").lower(),
+            "llm_model": os.getenv("LLM_MODEL", "gpt-3.5-turbo"),
+            "openai_api_key": os.getenv("OPENAI_API_KEY"),
+            "system_prompt": (
+                "You are a helpful assistant summarizing a guitar lesson. "
+                "Extract key points, chords mentioned, and techniques practiced. "
+                "Return a JSON object with keys: 'summary', 'key_points' (list), 'chords' (list). "
+                "IMPORTANT: Please write the summary and key points in Japanese."
+            )
+        }
+        
+        # Override with passed config
+        if config:
+            self.config.update(config)
 
+        self._configure_llm()
+
+    def update_config(self, new_config):
+        """Update configuration at runtime."""
+        if new_config:
+            self.config.update(new_config)
+            self._configure_llm()
+
+    def _configure_llm(self):
+        """Configure LLM client based on current config."""
+        self.llm_provider = self.config.get("llm_provider", "openai")
+        self.llm_model = self.config.get("llm_model", "gpt-3.5-turbo")
+        self.api_key = self.config.get("openai_api_key")
+        
         if self.llm_provider == "openai":
             if self.api_key:
                 openai.api_key = self.api_key
-        elif self.llm_provider == "ollama":
-            # Ollama compatibility uses the same OpenAI client structure
-            # but points to local server.
-            pass
+        # Ollama doesn't need explicit key setting usually, effectively handled in summarize
 
     def separate_audio(self, file_path, lesson_dir):
         """
@@ -116,12 +139,37 @@ class AudioProcessor:
             backing_out = no_vocals_wav.cpu().numpy().T
 
             # Prepare paths
-            final_vocals_path = lesson_dir / "vocals.wav"
-            final_guitar_path = lesson_dir / "guitar.wav"
+            temp_vocals_path = lesson_dir / "vocals_temp.wav"
+            temp_guitar_path = lesson_dir / "guitar_temp.wav"
+            final_vocals_path = lesson_dir / "vocals.mp3"
+            final_guitar_path = lesson_dir / "guitar.mp3"
             
-            # Save using soundfile
-            sf.write(str(final_vocals_path), vocals_out, model.samplerate)
-            sf.write(str(final_guitar_path), backing_out, model.samplerate)
+            # Save using soundfile (WAV first)
+            sf.write(str(temp_vocals_path), vocals_out, model.samplerate)
+            sf.write(str(temp_guitar_path), backing_out, model.samplerate)
+            
+            # Convert to MP3
+            def convert_to_mp3(input_path, output_path):
+                print(f"Converting {input_path} to MP3...")
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-i", str(input_path),
+                    "-codec:a", "libmp3lame",
+                    "-b:a", "192k",
+                    str(output_path)
+                ]
+                subprocess.run(cmd, check=True, capture_output=True)
+                # Remove temp wav
+                input_path.unlink()
+
+            try:
+                convert_to_mp3(temp_vocals_path, final_vocals_path)
+                convert_to_mp3(temp_guitar_path, final_guitar_path)
+            except subprocess.CalledProcessError as e:
+                print(f"MP3 Conversion failed: {e}")
+                # Fallback: keep WAVs if MP3 fails (renaming for consistency if needed, needs logic)
+                # For now, let's assume ffmpeg is present as verified before.
+                raise e
             
             return final_vocals_path, final_guitar_path
 
@@ -177,10 +225,12 @@ class AudioProcessor:
                     return {"error": "No OpenAI API Key found", "summary": "N/A"}
                 client = openai.OpenAI(api_key=self.api_key)
 
+            system_prompt = self.config.get("system_prompt", "You are a helpful assistant summarizing a guitar lesson. Extract key points, chords mentioned, and techniques practiced. Return a JSON object with keys: 'summary', 'key_points' (list), 'chords' (list).")
+
             response = client.chat.completions.create(
                 model=self.llm_model,
                 messages=[
-                    {"role": "system", "content": "You are a helpful assistant summarizing a guitar lesson. Extract key points, chords mentioned, and techniques practiced. Return a JSON object with keys: 'summary', 'key_points' (list), 'chords' (list)."},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"Here is the transcript of the guitar lesson:\n\n{transcript_text[:12000]}"} 
                 ],
                 response_format={"type": "json_object"} if self.llm_provider == "openai" else None
@@ -210,13 +260,13 @@ class AudioProcessor:
         lesson_dir = self.data_dir / safe_title
         lesson_dir.mkdir(parents=True, exist_ok=True)
 
-        original_path = lesson_dir / "original.wav"
+        original_mp3_path = lesson_dir / "original.mp3"
 
         # Save uploaded file
-        # Convert to WAV using ffmpeg (File-based approach for maximum robustness)
-        print(f"Converting upload ({uploaded_file.name}) to WAV...")
+        # Convert to MP3 using ffmpeg (File-based approach for maximum robustness & space saving)
+        print(f"Converting upload ({uploaded_file.name}) to MP3...")
         
-        # Determine extension or default to .tmp (ffmpeg is good at sniffing headers anyway)
+        # Determine extension or default to .tmp
         ext = Path(uploaded_file.name).suffix
         if not ext:
             ext = ".tmp"
@@ -230,15 +280,14 @@ class AudioProcessor:
                 
             print(f"Saved temp input to {temp_input_path} ({temp_input_path.stat().st_size} bytes)")
             
-            # 2. Run FFmpeg conversion
+            # 2. Run FFmpeg conversion to MP3
             cmd = [
                 "ffmpeg",
                 "-y",
                 "-i", str(temp_input_path),
-                "-ac", "2", 
-                "-ar", "44100", 
-                "-f", "wav",
-                str(original_path)
+                "-codec:a", "libmp3lame", 
+                "-b:a", "192k",
+                str(original_mp3_path)
             ]
             
             subprocess.run(
@@ -247,35 +296,45 @@ class AudioProcessor:
                 capture_output=True
             )
             
-            print(f"Converted to {original_path} ({original_path.stat().st_size} bytes)")
+            print(f"Converted to {original_mp3_path} ({original_mp3_path.stat().st_size} bytes)")
             
-            # Cleanup temp file
+            # Cleanup temp input
             if temp_input_path.exists():
                 temp_input_path.unlink()
             
+            # 3. Create a temporary WAV for processing (Demucs/Soundfile best compatibility)
+            # We don't want to keep this, just use it for separation
+            temp_proc_wav = lesson_dir / "proc_temp.wav"
+            cmd_wav = [
+                "ffmpeg", "-y",
+                "-i", str(original_mp3_path),
+                "-ac", "2", 
+                "-ar", "44100", 
+                "-f", "wav",
+                str(temp_proc_wav)
+            ]
+            subprocess.run(cmd_wav, check=True, capture_output=True)
+
         except subprocess.CalledProcessError as e:
             print(f"FFmpeg conversion failed: {e}")
             if e.stderr:
                 print(f"STDERR: {e.stderr.decode()}")
-            # Attempt to use the temp file as original if conversion failed (maybe it was already wav?)
-            if temp_input_path.exists():
-                 # Copy instead of move to keep logic simple
-                 with open(temp_input_path, "rb") as src, open(original_path, "wb") as dst:
-                     dst.write(src.read())
-
+            raise e
         except Exception as e:
              print(f"Generic error in conversion: {e}")
              import traceback
              traceback.print_exc()
-             # Last ditch: write bytes directly
-             uploaded_file.seek(0)
-             with open(original_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
+             raise e
 
-        # 1. Separate
-        vocals_path, guitar_path = self.separate_audio(original_path, lesson_dir)
+        # 1. Separate (Using the temp WAV for stability)
+        vocals_path, guitar_path = self.separate_audio(temp_proc_wav, lesson_dir)
+        
+        # Cleanup temp processing wav
+        if temp_proc_wav.exists():
+            temp_proc_wav.unlink()
 
-        # 2. Transcribe Vocals
+        # 2. Transcribe Vocals (Whisper can read MP3 directly usually, code assumes path)
+        # Note: separate_audio returns MP3 paths now.
         transcript_text, segments = self.transcribe(vocals_path)
         
         # Save transcript
