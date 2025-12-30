@@ -1,0 +1,108 @@
+import type { HTMLAttributes } from "react"
+import { Play, Pause, ZoomIn } from "lucide-react"
+import { cn } from "../../lib/utils"
+
+interface TransportControlsProps extends HTMLAttributes<HTMLDivElement> {
+    isPlaying: boolean;
+    onPlayPause: () => void;
+    playbackRate: number;
+    onPlaybackRateChange: (rate: number) => void;
+    zoom: number;
+    onZoomChange: (zoom: number) => void;
+    vocalsMuted: boolean;
+    onVocalsMuteChange: (muted: boolean) => void;
+    guitarMuted: boolean;
+    onGuitarMuteChange: (muted: boolean) => void;
+    currentTime: number;
+    totalTime: number;
+}
+
+export function TransportControls({
+    className,
+    isPlaying,
+    onPlayPause,
+    playbackRate,
+    onPlaybackRateChange,
+    zoom,
+    onZoomChange,
+    vocalsMuted,
+    onVocalsMuteChange,
+    guitarMuted,
+    onGuitarMuteChange,
+    currentTime,
+    totalTime,
+    ...props
+}: TransportControlsProps) {
+
+    const formatTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
+    return (
+        <div className={cn("bg-neutral-900 text-white p-3 rounded-lg flex items-center flex-wrap gap-4", className)} {...props}>
+            <button
+                onClick={onPlayPause}
+                className="w-10 h-10 rounded-full bg-orange-600 hover:bg-orange-500 flex items-center justify-center transition-colors"
+            >
+                {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
+            </button>
+
+            {/* Speed */}
+            <div className="flex flex-col gap-1 min-w-[100px]">
+                <label className="text-[10px] text-neutral-400 font-medium uppercase tracking-wider">
+                    Speed: <span className="text-white">{playbackRate.toFixed(1)}x</span>
+                </label>
+                <input
+                    type="range"
+                    min="0.25" max="1.5" step="0.05"
+                    value={playbackRate}
+                    onChange={(e) => onPlaybackRateChange(parseFloat(e.target.value))}
+                    className="accent-orange-500 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                />
+            </div>
+
+            {/* Zoom */}
+            <div className="flex flex-col gap-1 min-w-[100px]">
+                <label className="text-[10px] text-neutral-400 font-medium uppercase tracking-wider flex items-center gap-1">
+                    <ZoomIn className="w-3 h-3" /> Zoom
+                </label>
+                <input
+                    type="range"
+                    min="10" max="200" step="10"
+                    value={zoom}
+                    onChange={(e) => onZoomChange(parseInt(e.target.value))}
+                    className="accent-neutral-500 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                />
+            </div>
+
+            {/* Tracks */}
+            <div className="flex gap-4 border-l border-neutral-700 pl-4">
+                <label className="flex items-center gap-2 cursor-pointer text-xs">
+                    <input
+                        type="checkbox"
+                        checked={!vocalsMuted}
+                        onChange={(e) => onVocalsMuteChange(!e.target.checked)}
+                        className="accent-purple-500"
+                    />
+                    Vocals
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-xs">
+                    <input
+                        type="checkbox"
+                        checked={!guitarMuted}
+                        onChange={(e) => onGuitarMuteChange(!e.target.checked)}
+                        className="accent-orange-500"
+                    />
+                    Guitar
+                </label>
+            </div>
+
+            {/* Time */}
+            <div className="ml-auto font-mono text-sm text-neutral-300">
+                {formatTime(currentTime)} / {formatTime(totalTime)}
+            </div>
+        </div>
+    )
+}
