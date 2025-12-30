@@ -7,10 +7,11 @@ import { cn } from "../../lib/utils"
 
 interface MultiTrackPlayerProps {
     lessonId: string;
+    initialRegion?: { start: number, end: number };
     className?: string;
 }
 
-export function MultiTrackPlayer({ lessonId, className }: MultiTrackPlayerProps) {
+export function MultiTrackPlayer({ lessonId, initialRegion, className }: MultiTrackPlayerProps) {
     // Container Refs
     const containerV = useRef<HTMLDivElement>(null)
     const containerG = useRef<HTMLDivElement>(null)
@@ -86,6 +87,21 @@ export function MultiTrackPlayer({ lessonId, className }: MultiTrackPlayerProps)
         wsG.current.on('ready', () => {
             setIsReady(true);
             setTotalTime(wsG.current?.getDuration() || 0);
+
+            // Handle Initial Region
+            if (initialRegion) {
+                regions.clearRegions();
+                regions.addRegion({
+                    start: initialRegion.start,
+                    end: initialRegion.end,
+                    color: 'rgba(255, 0, 0, 0.3)',
+                    drag: true,
+                    resize: true
+                });
+                setSelection(initialRegion);
+                wsG.current?.setTime(initialRegion.start);
+                wsV.current?.setTime(initialRegion.start);
+            }
         });
 
         wsG.current.on('finish', () => {

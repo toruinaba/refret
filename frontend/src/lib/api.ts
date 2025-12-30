@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Lesson, LessonDetail } from '../types';
+import type { Lesson, LessonDetail, Lick } from '../types';
 
 const API_BASE_URL = 'http://localhost:8000/api';
 
@@ -25,6 +25,31 @@ export const api = {
     updateLesson: async (id: string, updates: Partial<Lesson>): Promise<Lesson> => {
         const res = await client.put(`/lessons/${id}`, updates);
         return res.data;
+    },
+
+    // Licks
+    getLicks: async (): Promise<Lick[]> => {
+        const res = await client.get('/licks');
+        return res.data;
+    },
+
+    getLick: async (id: string): Promise<Lick> => {
+        const res = await client.get(`/licks/${id}`);
+        return res.data;
+    },
+
+    createLick: async (data: Omit<Lick, 'id' | 'created_at'>): Promise<Lick> => {
+        const res = await client.post('/licks', data);
+        return res.data;
+    },
+
+    updateLick: async (id: string, updates: Partial<Lick>): Promise<Lick> => {
+        const res = await client.put(`/licks/${id}`, updates);
+        return res.data;
+    },
+
+    deleteLick: async (id: string): Promise<void> => {
+        await client.delete(`/licks/${id}`);
     },
 
     // Audio helpers
