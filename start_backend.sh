@@ -1,6 +1,5 @@
 #!/bin/bash
 echo "🎸 Starting Refret Backend..."
-cd backend
-# Check if venv is active or available, otherwise hint
-# Assuming user runs this from root where venv might be active
-uvicorn app.main:app --reload --port 8000
+# Run from project root to ensure 'backend' package is resolvable
+export PYTHONPATH=$PYTHONPATH:.
+uvicorn backend.app.main:app --reload --port 8000

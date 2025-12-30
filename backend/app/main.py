@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
+from backend.app.routers import lessons
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Load AI models here if needed in future
@@ -32,6 +34,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(lessons.router, prefix="/api/lessons", tags=["lessons"])
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "message": "Refret Backend is running 🎸"}
+
