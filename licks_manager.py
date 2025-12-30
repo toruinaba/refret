@@ -15,7 +15,7 @@ def load_licks():
     except:
         return []
 
-def save_lick(lesson_dir_name, title, tags, start_time, end_time):
+def save_lick(lesson_dir_name, title, tags, start_time, end_time, memo=""):
     """
     Save a new lick to the database.
     
@@ -25,6 +25,7 @@ def save_lick(lesson_dir_name, title, tags, start_time, end_time):
         tags (list): List of tags
         start_time (float): Start time in seconds
         end_time (float): End time in seconds
+        memo (str): Optional memo/notes
     """
     licks = load_licks()
     
@@ -35,6 +36,7 @@ def save_lick(lesson_dir_name, title, tags, start_time, end_time):
         "tags": tags,
         "start": float(start_time),
         "end": float(end_time),
+        "memo": memo,
         "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
     
@@ -47,6 +49,26 @@ def save_lick(lesson_dir_name, title, tags, start_time, end_time):
         json.dump(licks, f, indent=4)
         
     return new_lick
+
+def update_lick(lick_id, updates):
+    """
+    Update an existing lick with a dictionary of changes.
+    Args:
+        lick_id (str): ID of the lick to update
+        updates (dict): Dictionary of keys/values to update (e.g., {"memo": "new text"})
+    """
+    licks = load_licks()
+    updated = False
+    for lick in licks:
+        if lick["id"] == lick_id:
+            lick.update(updates)
+            updated = True
+            break
+            
+    if updated:
+        with open(LICKS_FILE, "w") as f:
+            json.dump(licks, f, indent=4)
+    return updated
 
 def delete_lick(lick_id):
     """Delete a lick by ID."""

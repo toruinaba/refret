@@ -161,11 +161,10 @@ def get_library_data():
     return df
 
 def play_lick(lick):
-    """Callback to play a lick: switch mode and setup looping."""
+    """Callback to play a lick in Lick Player mode."""
     st.session_state.selected_lesson = lick['lesson_dir']
-    st.session_state.auto_loop_start = lick['start']
-    st.session_state.auto_loop_end = lick['end']
-    st.session_state["nav_mode"] = "Library (Review)"
+    st.session_state.current_lick = lick
+    st.session_state["nav_mode"] = "Lick Library 🎸"
 
 # Sidebar Navigation
 st.sidebar.title("🎸 Guitar Review")
@@ -308,12 +307,13 @@ elif mode == "Library (Review)":
             selected_lesson = st.session_state.selected_lesson
             lesson_path = data_dir / selected_lesson
             
-            # Navigation
+            # Title First (User Request)
+            st.title(f"🎸 {selected_lesson}")
+
+            # Minimal Navigation
             if st.button("← Back to Library"):
                 st.session_state.selected_lesson = None
                 st.rerun()
-            
-            st.header(f"🎸 {selected_lesson}")
             
             # Load Audio Files
             vocals_path = lesson_path / "vocals.mp3"
@@ -338,64 +338,11 @@ elif mode == "Library (Review)":
             # Load Metadata
             metadata = load_metadata(lesson_path)
 
-            # --- Displays Memo (Markdown) ---
-            if metadata.get("memo"):
-                with st.expander("📝 My Memo", expanded=True):
-                    st.markdown(metadata["memo"])
 
-            # Layout: Player (Main) + Metadata Editor (Sidebar/Column)
-            
-            # --- Metadata Editor (Sidebar) ---
-            with st.sidebar:
-                st.subheader("✏️ Lesson Metadata")
-                with st.form("metadata_form"):
-                    # Tags
-                    current_tags = metadata.get("tags", [])
-                    
-                    # Get all tags for autocomplete
-                    all_existing_tags = get_all_tags()
-                    
-                    # Dynamic Tag Creation
-                    new_tag_created = st.text_input("Create New Tag (Save to add)", key="new_tag_sidebar")
-                    
-                    # If a new tag is entered, add it to the list of options and pre-select it
-                    if new_tag_created and new_tag_created not in all_existing_tags:
-                        all_existing_tags.append(new_tag_created)
-                        # Ensure the new tag is in the default selection if user typed it
-                        if new_tag_created not in current_tags:
-                            current_tags.append(new_tag_created)
-
-                    available_tags = sorted(list(set(all_existing_tags))) # Use all_existing_tags which now includes the new one
-                    
-                    updated_tags = st.multiselect("Tags", options=available_tags, default=current_tags)
-                    
-                    # Memo (Markdown)
-                    st.caption("Markdown supported")
-                    updated_memo = st.text_area("Memo", value=metadata.get("memo", ""), height=150, help="Markdown syntax supported")
-                    
-                    if st.form_submit_button("Save Metadata"):
-                        metadata["tags"] = updated_tags
-                        metadata["memo"] = updated_memo
-                        save_metadata(lesson_path, metadata)
-                        st.success("Saved!")
-                        st.rerun()
 
             # --- Player Component ---
             
-            # Download Buttons
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                if vocals_path.exists():
-                    with open(vocals_path, "rb") as f:
-                        st.download_button("Download Vocals (MP3)", f, file_name="vocals.mp3")
-            with col2:
-                if guitar_path.exists():
-                    with open(guitar_path, "rb") as f:
-                        st.download_button("Download Guitar (MP3)", f, file_name="guitar.mp3")
-            with col3:
-                if original_path.exists():
-                    with open(original_path, "rb") as f:
-                        st.download_button("Download Original (MP3)", f, file_name="original.mp3")
+
 
 
 
@@ -412,550 +359,721 @@ elif mode == "Library (Review)":
             # Get tags for JS autocomplete
             all_tags_json = json.dumps(get_all_tags())
 
-            # Generate Custom HTML for Wavesurfer Player & Interactive Summary
-            html_content = f"""
+            # --- 1. Player Component HTML ---
+            player_html = f"""
                 <html>
                 <head>
                 <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
                 <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
                 <style>
-                    body {{ font-family: sans-serif; color: #333; margin: 0; padding: 0; }}
-                    .container {{ display: flex; gap: 20px; flex-direction: column; }}
-                    
-                    /* Desktop layout */
-                    @media (min-width: 768px) {{
-                        .container {{ flex-direction: row; }}
-                    }}
-
-                    .player_col {{ flex: 2; padding: 20px; background: #f9f9f9; border-radius: 10px; }}
-                    .summary_col {{ flex: 1; padding: 20px; background: #fff; border: 1px solid #ddd; border-radius: 10px; height: 600px; overflow-y: auto; }}
-                    
-                    h3 {{ margin-top: 0; }}
-                    
+                    body {{ font-family: sans-serif; color: #333; margin: 0; padding: 10px; background: #f9f9f9; overflow: hidden; }}
                     /* Controls */
                     .controls-area {{ 
                         background: #333; 
-                        padding: 15px; 
+                        padding: 10px; 
                         border-radius: 8px; 
                         color: white;
                         display: flex;
                         align-items: center;
-                        gap: 20px;
-                        margin-bottom: 20px;
+                        gap: 15px;
+                        margin-bottom: 10px;
                         flex-wrap: wrap;
                     }}
-                    
                     .play-btn {{
-                        background: #ff4b4b;
-                        color: white;
-                        border: none;
-                        width: 50px;
-                        height: 50px;
-                        border-radius: 50%;
-                        font-size: 24px;
-                        cursor: pointer;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        transition: background 0.2s;
+                        background: #ff4b4b; color: white; border: none; width: 40px; height: 40px;
+                        border-radius: 50%; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;
                     }}
                     .play-btn:hover {{ background: #ff3333; }}
-                    
-                    .action-btn {{
-                        background: #4b8bff;
-                        color: white;
-                        border: none;
-                        padding: 8px 12px;
-                        border-radius: 4px;
-                        cursor: pointer;
-                        font-weight: bold;
-                        font-size: 13px;
-                        display: flex;
-                        align-items: center;
-                        gap: 5px;
-                        transition: background 0.2s;
-                    }}
-                    .action-btn:hover {{ background: #3373e6; }}
-
-                    .slider-group {{ display: flex; flex-direction: column; gap: 5px; min-width: 150px; }}
-                    .slider-group label {{ font-size: 12px; color: #ccc; }}
+                    .slider-group {{ display: flex; flex-direction: column; gap: 2px; min-width: 120px; }}
+                    .slider-group label {{ font-size: 11px; color: #ccc; }}
                     input[type=range] {{ width: 100%; cursor: pointer; }}
-
+                    
                     .waveform-box {{
-                        margin-bottom: 20px;
-                        background: white;
-                        padding: 10px;
-                        border-radius: 8px;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                        position: relative;
+                        margin-bottom: 10px; background: white; padding: 5px; border-radius: 6px; position: relative;
+                        height: 80px;
                     }}
                     .waveform-label {{
-                        position: absolute;
-                        top: 5px;
-                        left: 10px;
-                        font-size: 11px;
-                        font-weight: bold;
-                        z-index: 10;
-                        padding: 2px 6px;
-                        border-radius: 4px;
-                        background: rgba(255,255,255,0.8);
-                        pointer-events: none;
+                        position: absolute; top: 2px; left: 5px; font-size: 10px; font-weight: bold;
+                        padding: 1px 4px; border-radius: 3px; background: rgba(255,255,255,0.8); pointer-events: none; z-index: 10;
                     }}
-
-                    /* Interactive Summary Styles */
-                    .timestamp-link {{
-                        color: #ff4b4b;
-                        text-decoration: none;
-                        font-weight: bold;
-                        cursor: pointer;
-                        padding: 2px 4px;
-                        border-radius: 4px;
-                        transition: background 0.2s;
+                    #regionInfo {{
+                        color: #ccc; font-size: 12px; font-weight: bold; margin-left: 15px; border-left: 1px solid #555; padding-left: 15px;
                     }}
-                    .timestamp-link:hover {{ background: #ffeeee; text-decoration: underline; }}
-                    
-                    ul {{ padding-left: 20px; }}
-                    li {{ margin-bottom: 12px; line-height: 1.5; }}
                 </style>
                 </head>
                 <body>
-                
-                <div class="container">
-                    <!-- Left: Players -->
-                    <div class="player_col">
-                        <h3>🎧 Study Player</h3>
-                        
-                        <div class="controls-area">
-                            <button id="playBtn" class="play-btn">▶</button>
-                            
-                            <div class="slider-group">
-                                <label>Speed: <span id="speedVal">1.0</span>x</label>
-                                <input type="range" id="speedSlider" min="0.25" max="1.5" step="0.05" value="1.0">
-                            </div>
-
-                            <div class="slider-group">
-                                <label>Zoom</label>
-                                <input type="range" id="zoomSlider" min="10" max="200" step="10" value="20">
-                            </div>
-
-                            <div class="slider-group" style="min-width: 120px;">
-                                <label>Tracks</label>
-                                <div style="display: flex; gap: 10px; align-items: center; height: 20px;">
-                                    <label style="color: white; font-size: 11px; display: flex; align-items: center; gap: 4px; cursor: pointer;">
-                                        <input type="checkbox" id="muteV" checked> Vocals
-                                    </label>
-                                    <label style="color: white; font-size: 11px; display: flex; align-items: center; gap: 4px; cursor: pointer;">
-                                        <input type="checkbox" id="muteG" checked> Guitar
-                                    </label>
-                                </div>
-                            </div>
-
-                            <div id="timeDisplay" style="font-family: monospace; font-size: 14px; margin-left: 10px;">00:00 / 00:00</div>
-                            
-                            <div style="font-size: 0.9em; margin-left: auto; color: #aaa;">
-                                <small>💡 Drag guitar track to loop</small>
+                    <div class="controls-area">
+                        <button id="playBtn" class="play-btn">▶</button>
+                        <div class="slider-group">
+                            <label>Speed: <span id="speedVal">1.0</span>x</label>
+                            <input type="range" id="speedSlider" min="0.25" max="1.5" step="0.05" value="1.0">
+                        </div>
+                        <div class="slider-group">
+                            <label>Zoom</label>
+                            <input type="range" id="zoomSlider" min="10" max="200" step="10" value="20">
+                        </div>
+                        <div class="slider-group" style="min-width: 100px;">
+                             <div style="display: flex; gap: 8px; align-items: center;">
+                                <label style="color: white; font-size: 10px;"><input type="checkbox" id="muteV" checked> Vocals</label>
+                                <label style="color: white; font-size: 10px;"><input type="checkbox" id="muteG" checked> Guitar</label>
                             </div>
                         </div>
-                        
-                            <div style="font-size: 0.9em; margin-left: auto; color: #aaa;">
-                                <small>💡 Drag guitar track to loop</small>
-                            </div>
-                        </div>
-                        
-                        <!-- Region Info Display -->
-                        <div id="regionInfo" style="text-align: center; background: #fff; padding: 10px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 20px; font-weight: bold; color: #333;">
-                            Selection: --
-                        </div>
-
-                        <!-- Vocals -->
-                        <div class="waveform-box">
-                            <div class="waveform-label">🗣️ Vocals</div>
-                            <div id="waveform-v"></div>
-                        </div>
-                        
-                        <!-- Guitar -->
-                        <div class="waveform-box">
-                            <div class="waveform-label">🎸 Guitar</div>
-                            <div id="waveform-g"></div>
-                        </div>
+                        <div id="timeDisplay" style="font-family: monospace; font-size: 12px; margin-left: auto;">00:00 / 00:00</div>
+                        <div id="regionInfo">Selection: --</div>
                     </div>
-                    
-                    <!-- Right: Summary -->
-                    <div class="summary_col">
-                        <h3>📝 Interactive Notes</h3>
-                        <div id="summary-content">
-                            """
+
+                    <div class="waveform-box">
+                        <div class="waveform-label">🗣️ Vocals</div>
+                        <div id="waveform-v"></div>
+                    </div>
+                    <div class="waveform-box">
+                        <div class="waveform-label">🎸 Guitar</div>
+                        <div id="waveform-g"></div>
+                    </div>
+
+                    <script>
+                        const vocalsData = "data:audio/mp3;base64,{vocals_b64}";
+                        const guitarData = "data:audio/mp3;base64,{guitar_b64}";
+                        const autoStart = {auto_loop_start if auto_loop_start is not None else 'null'};
+                        const autoEnd = {auto_loop_end if auto_loop_end is not None else 'null'};
+
+                        // Broadcast Channel Receiver
+                        const bc = new BroadcastChannel('refret_sync');
+
+                        // Elements
+                        const playBtn = document.getElementById('playBtn');
+                        const speedSlider = document.getElementById('speedSlider');
+                        const speedVal = document.getElementById('speedVal');
+                        const zoomSlider = document.getElementById('zoomSlider');
+                        const muteV = document.getElementById('muteV');
+                        const muteG = document.getElementById('muteG');
+                        const timeDisplay = document.getElementById('timeDisplay');
+                        const regionInfo = document.getElementById('regionInfo');
+
+                        let wsV = WaveSurfer.create({{
+                            container: '#waveform-v', waveColor: '#A855F7', progressColor: '#7E22CE', cursorColor: '#7E22CE',
+                            barWidth: 2, barGap: 1, barRadius: 2, height: 70, normalize: true, minPxPerSec: 20
+                        }});
+                        let wsG = WaveSurfer.create({{
+                            container: '#waveform-g', waveColor: '#F97316', progressColor: '#C2410C', cursorColor: '#C2410C',
+                            barWidth: 2, barGap: 1, barRadius: 2, height: 70, normalize: true, minPxPerSec: 20,
+                            plugins: [ WaveSurfer.Regions.create() ]
+                        }});
+
+                        wsV.load(vocalsData);
+                        wsG.load(guitarData);
+
+                        let isReadyV = false;
+                        let isReadyG = false;
+
+                        // Unified Play/Pause
+                        const togglePlay = () => {{
+                            if(wsV.isPlaying()) {{ wsV.pause(); wsG.pause(); playBtn.textContent = "▶"; }}
+                            else {{ wsV.play(); wsG.play(); playBtn.textContent = "⏸"; }}
+                        }};
+                        playBtn.onclick = togglePlay;
+
+                        // Ready Handler
+                        const checkReady = () => {{
+                            if(isReadyV && isReadyG) {{
+                                if(autoStart !== null && autoEnd !== null) {{
+                                    const wsGRegions = wsG.plugins[0];
+                                    wsGRegions.addRegion({{ start: autoStart, end: autoEnd, color: "rgba(255, 0, 0, 0.3)", loop: true }});
+                                    wsV.setTime(autoStart); wsG.setTime(autoStart);
+                                    wsV.play(); wsG.play();
+                                    playBtn.textContent = "⏸";
+                                }}
+                            }}
+                        }};
+
+                        wsV.on('ready', () => {{ isReadyV = true; checkReady(); }});
+                        wsG.on('ready', () => {{ isReadyG = true; checkReady(); }});
+                        
+                        // Sync
+                        wsV.on('seek', (p) => {{ wsG.seekTo(p); }});
+                        wsG.on('seek', (p) => {{ wsV.seekTo(p); }});
+                        wsV.on('finish', () => {{ playBtn.textContent = "▶"; }});
+
+                        // Controls
+                        speedSlider.oninput = () => {{
+                            const rate = parseFloat(speedSlider.value);
+                            wsV.setPlaybackRate(rate); wsG.setPlaybackRate(rate);
+                            speedVal.textContent = rate.toFixed(1);
+                        }};
+                        zoomSlider.oninput = () => {{
+                            const z = parseInt(zoomSlider.value);
+                            wsV.zoom(z); wsG.zoom(z);
+                        }};
+                        muteV.onchange = () => {{ wsV.setMuted(!muteV.checked); }};
+                        muteG.onchange = () => {{ wsG.setMuted(!muteG.checked); }};
+
+                        // Time Display
+                        wsV.on('timeupdate', () => {{
+                            const cur = wsV.getCurrentTime();
+                            const tot = wsV.getDuration() || 0;
+                            const fmt = (s) => {{
+                                const m = Math.floor(s/60); const sec = Math.floor(s%60);
+                                return `${{m.toString().padStart(2,'0')}}:${{sec.toString().padStart(2,'0')}}`;
+                            }};
+                            timeDisplay.textContent = `${{fmt(cur)}} / ${{fmt(tot)}}`;
+                        }});
+
+                        // Region Info
+                        const wsGRegions = wsG.plugins[0];
+                        
+                        // Enable Drag Selection
+                        // Enable Drag Selection
+                        wsGRegions.enableDragSelection({{
+                            color: 'rgba(255, 0, 0, 0.3)',
+                        }});
+
+                        const updateInfo = (region) => {{
+                            regionInfo.innerText = `Selection: ${{region.start.toFixed(2)}}s - ${{region.end.toFixed(2)}}s`;
+                        }};
+                        
+                        wsGRegions.on('region-created', (region) => {{
+                            // Enforce Single Region: Clear others
+                            wsGRegions.getRegions().forEach(r => {{
+                                if (r !== region) r.remove();
+                            }});
+                            updateInfo(region);
+                        }});
+                        
+                        wsGRegions.on('region-updated', (region) => {{
+                            updateInfo(region);
+                        }});
+                        
+                        // Manual Loop Sync
+                        wsGRegions.on('region-out', (region) => {{
+                            wsV.setTime(region.start);
+                            wsG.setTime(region.start);
+                            wsV.play();
+                            wsG.play();
+                        }});
+                        
+                        wsGRegions.on('region-clicked', (region, e) => {{
+                            e.stopPropagation();
+                            wsV.setTime(region.start);
+                            wsG.setTime(region.start);
+                            wsV.play();
+                            wsG.play();
+                            playBtn.textContent = "⏸";
+                            updateInfo(region);
+                        }});
+
+                        // Broadcast Listener (Seek)
+                        bc.onmessage = (event) => {{
+                            if (event.data.cmd === 'seek') {{
+                                const t = event.data.time;
+                                wsV.setTime(t); wsG.setTime(t);
+                                wsV.play(); wsG.play();
+                                playBtn.textContent = "⏸";
+                            }}
+                        }};
+                    </script>
+                </body>
+                </html>
+            """
+            
+            # --- 2. Summary Component HTML ---
+            summary_html = f"""
+                <html>
+                <head>
+                <style>
+                    body {{ font-family: sans-serif; color: #333; margin: 0; padding: 10px; }}
+                    h4 {{ margin-top: 10px; margin-bottom: 5px; color: #555; }}
+                    ul {{ padding-left: 20px; }}
+                    li {{ margin-bottom: 8px; line-height: 1.4; font-size: 14px; }}
+                    .timestamp-link {{
+                        color: #ff4b4b; text-decoration: none; font-weight: bold; cursor: pointer;
+                        padding: 1px 4px; border-radius: 3px; background: #fff0f0;
+                    }}
+                    .timestamp-link:hover {{ background: #ffcccc; }}
+                    code {{ background: #eee; padding: 2px 4px; border-radius: 4px; font-family: monospace; }}
+                </style>
+                </head>
+                <body>
+                    <h3>📝 Interactive Notes</h3>
+                    <div id="summary-content">
+            """
             
             if "error" in summary_content:
-                html_content += f"""
-                    <div style="padding: 10px; background: #fee; color: #c00; border-radius: 5px; margin-bottom: 10px;">
-                        <strong>⚠️ Summary Generation Error:</strong><br>
-                        {summary_content['error']}
-                    </div>
-                """
+                summary_html += f"<div style='color:red'><strong>Error:</strong> {summary_content['error']}</div>"
             
-            html_content += f"""
-                            <h4>Summary</h4>
-                            <p>{summary_content.get('summary', 'No summary available.')}</p>
-                            
-                            <h4>Key Points</h4>
-                            <ul>
+            summary_html += f"""
+                <p>{summary_content.get('summary', 'No summary.')}</p>
+                <h4>Key Points</h4>
+                <ul>
             """
             
             points = summary_content.get('key_points', [])
-            for i, point_data in enumerate(points):
-                # Handle both new dict format and old string format
+            for point_data in points:
                 if isinstance(point_data, dict):
-                    point_text = point_data.get("point", "")
-                    timestamp_str = point_data.get("timestamp", "00:00")
+                    pt = point_data.get("point", "")
+                    ts = point_data.get("timestamp", "00:00")
                 else:
-                    point_text = str(point_data)
-                    timestamp_str = "00:00"
-
-                # Parse timestamp to seconds
+                    pt = str(point_data)
+                    ts = "00:00"
+                
+                # Parse
                 try:
-                    parts = timestamp_str.split(":")
+                    parts = ts.split(":")
                     if len(parts) == 2:
-                        time_sec = int(parts[0]) * 60 + int(parts[1])
+                        ts_sec = int(parts[0]) * 60 + int(parts[1])
                     else:
-                        time_sec = 0
+                        ts_sec = 0
                 except:
-                    time_sec = 0
-
-                html_content += f"""
+                    ts_sec = 0
+                    
+                summary_html += f"""
                     <li>
-                        <a class="timestamp-link" onclick="seekTo({time_sec})">[{timestamp_str}]</a>
-                        {point_text}
+                        <a class="timestamp-link" onclick="seekTo({ts_sec})">[{ts}]</a> {pt}
                     </li>
                 """
-
-            html_content += f"""
-                        </ul>
-                        <h4>Chords</h4>
-                        <code>{", ".join(summary_content.get('chords', []))}</code>
-                    </div>
-                </div>
-            </div>
-
-            <script>
-                // Base64 Audio Data
-                const vocalsData = "data:audio/mp3;base64,{vocals_b64}";
-                const guitarData = "data:audio/mp3;base64,{guitar_b64}";
-
-                // Auto Loop Params
-                const autoStart = {auto_loop_start if auto_loop_start is not None else 'null'};
-                const autoEnd = {auto_loop_end if auto_loop_end is not None else 'null'};
+            
+            summary_html += f"""
+                </ul>
+                <h4>Chords</h4>
+                <code>{", ".join(summary_content.get('chords', []))}</code>
                 
-                // Tags
-                const availableTags = {all_tags_json};
-
-                // Components
-                const playBtn = document.getElementById('playBtn');
-                const speedSlider = document.getElementById('speedSlider');
-                const speedVal = document.getElementById('speedVal');
-                const zoomSlider = document.getElementById('zoomSlider');
-                const muteV = document.getElementById('muteV');
-                const muteG = document.getElementById('muteG');
-                const timeDisplay = document.getElementById('timeDisplay');
-
-                // Initialize Wavesurfer Instances
-                let wsV, wsG;
-                let isReadyV = false;
-                let isReadyG = false;
-
-                // 1. Vocals (Master)
-                wsV = WaveSurfer.create({{
-                    container: '#waveform-v',
-                    waveColor: '#A855F7',
-                    progressColor: '#7E22CE',
-                    cursorColor: '#7E22CE',
-                    barWidth: 2,
-                    barGap: 1,
-                    barRadius: 2,
-                    height: 100,
-                    normalize: true,
-                    minPxPerSec: 20,
-                }});
-
-                // 2. Guitar (Follower + Regions)
-                wsG = WaveSurfer.create({{
-                    container: '#waveform-g',
-                    waveColor: '#F97316',
-                    progressColor: '#C2410C',
-                    cursorColor: '#C2410C',
-                    barWidth: 2,
-                    barGap: 1,
-                    barRadius: 2,
-                    height: 100,
-                    normalize: true,
-                    minPxPerSec: 20,
-                    plugins: [
-                        WaveSurfer.Regions.create()
-                    ]
-                }});
-
-                // Load Audio
-                wsV.load(vocalsData);
-                wsG.load(guitarData);
-
-                // --- Helper: Format Time ---
-                function formatTime(seconds) {{
-                    const m = Math.floor(seconds / 60);
-                    const s = Math.floor(seconds % 60);
-                    return `${{m.toString().padStart(2, '0')}}:${{s.toString().padStart(2, '0')}}`;
-                }}
-                
-                function updateTimeDisplay() {{
-                    const current = wsV.getCurrentTime();
-                    const total = wsV.getDuration();
-                    if (total > 0) {{
-                        timeDisplay.textContent = `${{formatTime(current)}} / ${{formatTime(total)}}`;
-                    }} else {{
-                         timeDisplay.textContent = "00:00 / 00:00";
+                <script>
+                    const bc = new BroadcastChannel('refret_sync');
+                    function seekTo(seconds) {{
+                        bc.postMessage({{cmd: 'seek', time: seconds}});
                     }}
-                }}
+                </script>
+                </div> <!-- End Summary Content -->
+                </body>
+                </html>
+            """
 
-                // --- Event Listeners & Sync ---
+            # --- RENDER LAYOUT ---
+            
+            # 1. Sticky Player Header
+            st.markdown(
+                """
+                <style>
+                    /* Stickiness for the first iframe (Player) */
+                    iframe[title="streamlit.components.v1.html"]:nth-of-type(1) {
+                        position: sticky;
+                        top: 0;
+                        z-index: 100;
+                        background: #f0f2f6; 
+                        border-bottom: 2px solid #ddd;
+                    }
+                </style>
+                """, unsafe_allow_html=True
+            )
+            
+            components.html(player_html, height=340, scrolling=False)
+            
+            # 2. Scrollable Content Area
+            with st.container(height=600):
+                # Summary
+                components.html(summary_html, height=450, scrolling=True)
                 
-                wsV.on('ready', () => {{ 
-                    isReadyV = true; 
-                    checkReady();
-                    updateTimeDisplay();
-                }});
-                wsG.on('ready', () => {{ isReadyG = true; checkReady(); }});
+                st.divider()
                 
-                // Time Update
-                wsV.on('timeupdate', () => {{
-                    updateTimeDisplay();
-                }});
-
-                function checkReady() {{
-                    if (isReadyV && isReadyG) {{
-                        console.log("Both tracks ready");
+                # --- Metadata & Memo Editor ---
+                with st.expander("📝 Metadata & Memo", expanded=True):
+                    with st.form("metadata_form_inline"):
+                        # Tags
+                        current_tags = metadata.get("tags", [])
+                        all_existing_tags = get_all_tags()
                         
-                        // Handle Auto-Loop if present
-                        if (autoStart !== null && autoEnd !== null) {{
-                            // Use timeout to ensure robust play?
-                            const wsGRegions = wsG.plugins[0];
-                            wsGRegions.addRegion({{
-                                start: autoStart,
-                                end: autoEnd,
-                                color: "rgba(255, 0, 0, 0.3)",
-                                loop: true
-                            }});
-                            
-                            // Seek and Play
-                            wsV.setTime(autoStart);
-                            wsG.setTime(autoStart);
-                            wsV.play(autoStart);
-                            wsG.play(autoStart);
-                            playBtn.textContent = "⏸";
-                        }}
-                    }}
+                        # New Tag Logic (Simple)
+                        col_m1, col_m2 = st.columns([1, 2])
+                        with col_m1:
+                             new_tag_created = st.text_input("Create New Tag", key="new_tag_inline")
+                        with col_m2:
+                             if new_tag_created and new_tag_created not in all_existing_tags:
+                                 all_existing_tags.append(new_tag_created)
+                                 if new_tag_created not in current_tags:
+                                     current_tags.append(new_tag_created)
+                             
+                             available_tags = sorted(list(set(all_existing_tags)))
+                             updated_tags = st.multiselect("Tags", options=available_tags, default=current_tags)
+                        
+                        updated_memo = st.text_area("Memo (Markdown)", value=metadata.get("memo", ""), height=150)
+                        
+                        if st.form_submit_button("Save Metadata"):
+                            metadata["tags"] = updated_tags
+                            metadata["memo"] = updated_memo
+                            save_metadata(lesson_path, metadata)
+                            st.success("Metadata Saved!")
+                            st.rerun()
+
+                st.divider()
+
+                # Manual Save Lick Form
+                with st.expander("💾 Save Current Loop as Lick", expanded=True):
+                    st.caption("Tip: Check 'Selection' in player above.")
+                    with st.form("save_lick_form"):
+                        col_l1, col_l2 = st.columns(2)
+                        with col_l1:
+                             lick_title_in = st.text_input("Lick Title")
+                        with col_l2:
+                             lick_tags_select = st.multiselect("Tags", options=get_all_tags())
+                             lick_new_tag_in = st.text_input("New Tag")
+                        
+                        col_t1, col_t2 = st.columns(2)
+                        with col_t1:
+                             lick_start_in = st.number_input("Start", min_value=0.0, step=0.1, format="%.2f")
+                        with col_t2:
+                             lick_end_in = st.number_input("End", min_value=0.0, step=0.1, format="%.2f")
+
+                        if st.form_submit_button("Save to Library"):
+                            if lick_title_in and (lick_end_in > lick_start_in):
+                                f_tags = set(lick_tags_select)
+                                if lick_new_tag_in:
+                                    f_tags.add(lick_new_tag_in)
+                                    save_global_tags(list(f_tags))
+                                licks_manager.save_lick(st.session_state.selected_lesson, lick_title_in, list(f_tags), lick_start_in, lick_end_in)
+                                st.success("Saved!")
+                            else:
+                                st.error("Invalid input.")
+
+                st.divider()
+                st.caption("Downloads")
+                col_d1, col_d2, col_d3 = st.columns(3)
+                with col_d1:
+                    if vocals_path.exists():
+                        with open(vocals_path, "rb") as f:
+                             st.download_button("Vocals (MP3)", f, file_name="vocals.mp3")
+                with col_d2:
+                    if guitar_path.exists():
+                        with open(guitar_path, "rb") as f:
+                             st.download_button("Guitar (MP3)", f, file_name="guitar.mp3")
+                with col_d3:
+                    if original_path.exists():
+                        with open(original_path, "rb") as f:
+                             st.download_button("Original (MP3)", f, file_name="original.mp3")
+
+                # Transcript
+                st.subheader("📜 Full Transcript")
+                transcript_file = lesson_path / "transcript.txt"
+                if transcript_file.exists():
+                     with st.expander("Show Transcript", expanded=False):
+                         with open(transcript_file, "r") as f:
+                             st.text(f.read())
+
+# --- Mode: Lick Library ---
+# --- Mode: Lick Library ---
+elif mode == "Lick Library 🎸":
+    
+    if "current_lick" in st.session_state and st.session_state.current_lick:
+        # --- LICK PLAYER DETAIL VIEW ---
+        lick = st.session_state.current_lick
+        lesson_dir = lick['lesson_dir']
+        lesson_path = data_dir / lesson_dir
+        
+        st.title(f"🎸 {lick['title']}")
+        if st.button("← Back to Lick Library"):
+            del st.session_state["current_lick"]
+            st.rerun()
+            
+        # Load Audio
+        vocals_path = lesson_path / "vocals.mp3"
+        guitar_path = lesson_path / "guitar.mp3"
+        
+        vocals_b64 = get_audio_base64(vocals_path) if vocals_path.exists() else None
+        guitar_b64 = get_audio_base64(guitar_path) if guitar_path.exists() else None
+        
+        auto_loop_start = lick['start']
+        auto_loop_end = lick['end']
+        
+        # Player HTML (Copied from Review Mode)
+        player_html = f"""
+            <html>
+            <head>
+            <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
+            <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
+            <style>
+                body {{ font-family: sans-serif; color: #333; margin: 0; padding: 10px; background: #f9f9f9; overflow: hidden; }}
+                /* Controls */
+                .controls-area {{ 
+                    background: #333; 
+                    padding: 10px; 
+                    border-radius: 8px; 
+                    color: white;
+                    display: flex;
+                    align-items: center;
+                    gap: 15px;
+                    margin-bottom: 10px;
+                    flex-wrap: wrap;
                 }}
-
-                // Play/Pause Toggle
-                playBtn.onclick = () => {{
-                    if (wsV.isPlaying()) {{
-                        wsV.pause();
-                        wsG.pause();
-                        playBtn.textContent = "▶";
-                    }} else {{
-                        wsV.play();
-                        wsG.play();
-                        playBtn.textContent = "⏸";
-                    }}
-                }};
-
-                // Sync: Seek
-                wsV.on('seeking', (currentTime) => {{
-                    wsG.setTime(currentTime);
-                    updateTimeDisplay();
-                }});
+                .play-btn {{
+                    background: #ff4b4b; color: white; border: none; width: 40px; height: 40px;
+                    border-radius: 50%; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+                }}
+                .play-btn:hover {{ background: #ff3333; }}
+                .slider-group {{ display: flex; flex-direction: column; gap: 2px; min-width: 120px; }}
+                .slider-group label {{ font-size: 11px; color: #ccc; }}
+                input[type=range] {{ width: 100%; cursor: pointer; }}
                 
-                // Also sync if user clicks on guitar track
-                wsG.on('interaction', () => {{
-                    wsV.setTime(wsG.getCurrentTime());
-                    updateTimeDisplay();
-                }});
-                
-                // Sync: Finish
-                wsV.on('finish', () => {{
-                    wsG.stop();
-                    playBtn.textContent = "▶";
-                }});
+                .waveform-box {{
+                    margin-bottom: 10px; background: white; padding: 5px; border-radius: 6px; position: relative;
+                    height: 80px;
+                }}
+                .waveform-label {{
+                    position: absolute; top: 2px; left: 5px; font-size: 10px; font-weight: bold;
+                    padding: 1px 4px; border-radius: 3px; background: rgba(255,255,255,0.8); pointer-events: none; z-index: 10;
+                }}
+                 #regionInfo {{
+                    color: #ccc; font-size: 12px; font-weight: bold; margin-left: 15px; border-left: 1px solid #555; padding-left: 15px;
+                }}
+            </style>
+            </head>
+            <body>
+                <div class="controls-area">
+                    <button id="playBtn" class="play-btn">▶</button>
+                    <div class="slider-group">
+                        <label>Speed: <span id="speedVal">1.0</span>x</label>
+                        <input type="range" id="speedSlider" min="0.25" max="1.5" step="0.05" value="1.0">
+                    </div>
+                    <div class="slider-group">
+                        <label>Zoom</label>
+                        <input type="range" id="zoomSlider" min="10" max="200" step="10" value="20">
+                    </div>
+                    <div class="slider-group" style="min-width: 100px;">
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                            <label style="color: white; font-size: 10px;"><input type="checkbox" id="muteV" checked> Vocals</label>
+                            <label style="color: white; font-size: 10px;"><input type="checkbox" id="muteG" checked> Guitar</label>
+                        </div>
+                    </div>
+                    <div id="timeDisplay" style="font-family: monospace; font-size: 12px; margin-left: auto;">00:00 / 00:00</div>
+                    <div id="regionInfo">Selection: --</div>
+                </div>
 
-                // Speed Control
-                speedSlider.oninput = function() {{
-                    const speed = parseFloat(this.value);
-                    speedVal.textContent = speed.toFixed(1);
-                    wsV.setPlaybackRate(speed);
-                    wsG.setPlaybackRate(speed);
-                }};
+                <div class="waveform-box">
+                    <div class="waveform-label">🗣️ Vocals</div>
+                    <div id="waveform-v"></div>
+                </div>
+                <div class="waveform-box">
+                    <div class="waveform-label">🎸 Guitar</div>
+                    <div id="waveform-g"></div>
+                </div>
 
-                // Zoom Control
-                zoomSlider.oninput = function() {{
-                    const pxPerSec = parseInt(this.value);
-                    wsV.zoom(pxPerSec);
-                    wsG.zoom(pxPerSec);
-                }};
-                
-                // Mute Control
-                muteV.onchange = function() {{
-                    wsV.setMuted(!this.checked);
-                }};
-                
-                muteG.onchange = function() {{
-                    wsG.setMuted(!this.checked);
-                }};
+                <script>
+                    const vocalsData = "data:audio/mp3;base64,{vocals_b64}";
+                    const guitarData = "data:audio/mp3;base64,{guitar_b64}";
+                    const autoStart = {auto_loop_start};
+                    const autoEnd = {auto_loop_end};
 
-                // --- Looping (Regions) ---
-                const wsGRegions = wsG.plugins[0];
-                
-                wsGRegions.enableDragSelection({{
-                    color: 'rgba(255, 0, 0, 0.1)',
-                }});
+                    // Broadcast Channel Receiver
+                    const bc = new BroadcastChannel('refret_sync');
 
-                // On Region Loop
-                wsGRegions.on('region-out', (region) => {{
-                    console.log("Region Loop");
-                    wsV.setTime(region.start);
-                    wsG.setTime(region.start);
-                    if (!wsV.isPlaying()) {{
-                        wsV.play();
-                        wsG.play();
-                        playBtn.textContent = "⏸";
-                    }}
-                }});
-                
-                wsGRegions.on('region-clicked', (region, e) => {{
-                    e.stopPropagation();
-                    wsV.setTime(region.start);
-                    wsG.setTime(region.start);
-                    wsV.play();
-                    wsG.play();
-                    playBtn.textContent = "⏸";
-                }});
+                    // Elements
+                    const playBtn = document.getElementById('playBtn');
+                    const speedSlider = document.getElementById('speedSlider');
+                    const speedVal = document.getElementById('speedVal');
+                    const zoomSlider = document.getElementById('zoomSlider');
+                    const muteV = document.getElementById('muteV');
+                    const muteG = document.getElementById('muteG');
+                    const timeDisplay = document.getElementById('timeDisplay');
+                    const regionInfo = document.getElementById('regionInfo');
 
-                // --- External API ---
-                window.seekTo = function(seconds) {{
-                    wsV.setTime(seconds);
-                    wsG.setTime(seconds);
-                    wsV.play();
-                    wsG.play();
-                    playBtn.textContent = "⏸";
-                    wsGRegions.clearRegions();
-                }};
+                    let wsV = WaveSurfer.create({{
+                        container: '#waveform-v', waveColor: '#A855F7', progressColor: '#7E22CE', cursorColor: '#7E22CE',
+                        barWidth: 2, barGap: 1, barRadius: 2, height: 70, normalize: true, minPxPerSec: 20
+                    }});
+                    let wsG = WaveSurfer.create({{
+                        container: '#waveform-g', waveColor: '#F97316', progressColor: '#C2410C', cursorColor: '#C2410C',
+                        barWidth: 2, barGap: 1, barRadius: 2, height: 70, normalize: true, minPxPerSec: 20,
+                        plugins: [ WaveSurfer.Regions.create() ]
+                    }});
 
+                    wsV.load(vocalsData);
+                    wsG.load(guitarData);
 
-                
-                // --- Region Info Logic ---
-                const regionInfo = document.getElementById('regionInfo');
+                    let isReadyV = false;
+                    let isReadyG = false;
 
-                if (wsGRegions) {{
+                    // Unified Play/Pause
+                    const togglePlay = () => {{
+                        if(wsV.isPlaying()) {{ wsV.pause(); wsG.pause(); playBtn.textContent = "▶"; }}
+                        else {{ wsV.play(); wsG.play(); playBtn.textContent = "⏸"; }}
+                    }};
+                    playBtn.onclick = togglePlay;
+
+                    // Ready Handler
+                    const checkReady = () => {{
+                        if(isReadyV && isReadyG) {{
+                            if(autoStart !== null && autoEnd !== null) {{
+                                const wsGRegions = wsG.plugins[0];
+                                wsGRegions.addRegion({{ start: autoStart, end: autoEnd, color: "rgba(255, 0, 0, 0.3)" }});
+                                wsV.setTime(autoStart); wsG.setTime(autoStart);
+                            }}
+                        }}
+                    }};
+
+                    wsV.on('ready', () => {{ isReadyV = true; checkReady(); }});
+                    wsG.on('ready', () => {{ isReadyG = true; checkReady(); }});
+                    
+                    // Sync
+                    wsV.on('seek', (p) => {{ wsG.seekTo(p); }});
+                    wsG.on('seek', (p) => {{ wsV.seekTo(p); }});
+                    wsV.on('finish', () => {{ playBtn.textContent = "▶"; }});
+
+                    // Controls
+                    speedSlider.oninput = () => {{
+                        const rate = parseFloat(speedSlider.value);
+                        wsV.setPlaybackRate(rate); wsG.setPlaybackRate(rate);
+                        speedVal.textContent = rate.toFixed(1);
+                    }};
+                    zoomSlider.oninput = () => {{
+                        const z = parseInt(zoomSlider.value);
+                        wsV.zoom(z); wsG.zoom(z);
+                    }};
+                    muteV.onchange = () => {{ wsV.setMuted(!muteV.checked); }};
+                    muteG.onchange = () => {{ wsG.setMuted(!muteG.checked); }};
+
+                    // Time Display
+                    wsV.on('timeupdate', () => {{
+                        const cur = wsV.getCurrentTime();
+                        const tot = wsV.getDuration() || 0;
+                        const fmt = (s) => {{
+                            const m = Math.floor(s/60); const sec = Math.floor(s%60);
+                            return `${{m.toString().padStart(2,'0')}}:${{sec.toString().padStart(2,'0')}}`;
+                        }};
+                        timeDisplay.textContent = `${{fmt(cur)}} / ${{fmt(tot)}}`;
+                    }});
+
+                    // Region Info
+                    const wsGRegions = wsG.plugins[0];
+                    
+                    // Enable Drag Selection
+                    wsGRegions.enableDragSelection({{
+                        color: 'rgba(255, 0, 0, 0.3)',
+                    }});
+
                     const updateInfo = (region) => {{
                         regionInfo.innerText = `Selection: ${{region.start.toFixed(2)}}s - ${{region.end.toFixed(2)}}s`;
                     }};
-
-                    wsGRegions.on('region-updated', updateInfo);
-                    wsGRegions.on('region-created', updateInfo);
-                    wsGRegions.on('region-clicked', updateInfo);
-                }}
-
-            </script>
+                    
+                    wsGRegions.on('region-created', (region) => {{
+                        // Enforce Single Region: Clear others
+                        wsGRegions.getRegions().forEach(r => {{
+                            if (r !== region) r.remove();
+                        }});
+                        updateInfo(region);
+                    }});
+                    
+                    wsGRegions.on('region-updated', (region) => {{
+                        updateInfo(region);
+                    }});
+                    
+                    // Manual Loop Sync
+                    wsGRegions.on('region-out', (region) => {{
+                        wsV.setTime(region.start);
+                        wsG.setTime(region.start);
+                        wsV.play();
+                        wsG.play();
+                    }});
+                    
+                    wsGRegions.on('region-clicked', (region, e) => {{
+                        e.stopPropagation();
+                        wsV.setTime(region.start);
+                        wsG.setTime(region.start);
+                        wsV.play();
+                        wsG.play();
+                        playBtn.textContent = "⏸";
+                        updateInfo(region);
+                    }});
+                </script>
             </body>
             </html>
-
+        """
+        
+        # 1. Sticky Player Header
+        st.markdown(
             """
-
-            # Render
-            components.html(html_content, height=800, scrolling=True)
-
-
+            <style>
+                iframe[title="streamlit.components.v1.html"]:nth-of-type(1) {
+                    position: sticky;
+                    top: 0;
+                    z-index: 100;
+                    background: #f0f2f6; 
+                    border-bottom: 2px solid #ddd;
+                }
+            </style>
+            """, unsafe_allow_html=True
+        )
+        
+        components.html(player_html, height=340, scrolling=False)
+        
+        # 2. Scrollable Content
+        with st.container(height=600):
+            st.subheader("📝 Lick Memo")
             
-            # --- Save Lick Section (Manual) ---
-            with st.expander("💾 Save Current Loop as Lick", expanded=True):
-                st.caption("Tip: Check the 'Selection' time in the player and enter it below.")
-                with st.form("save_lick_form"):
-                    col_l1, col_l2 = st.columns(2)
-                    with col_l1:
-                        lick_title = st.text_input("Lick Title")
-                    with col_l2:
-                        lick_tags_select = st.multiselect("Tags", options=get_all_tags())
-                        lick_new_tag = st.text_input("New Tag (Optional)")
-                    
-                    col_t1, col_t2 = st.columns(2)
-                    with col_t1:
-                        lick_start = st.number_input("Start Time (sec)", min_value=0.0, step=0.1, format="%.2f")
-                    with col_t2:
-                        lick_end = st.number_input("End Time (sec)", min_value=0.0, step=0.1, format="%.2f")
-                    
-                    if st.form_submit_button("Save to Library"):
-                        if lick_title and (lick_end > lick_start):
-                            final_tags = set(lick_tags_select)
-                            if lick_new_tag:
-                                final_tags.add(lick_new_tag)
-                                save_global_tags(list(final_tags))
-                            
-                            licks_manager.save_lick(st.session_state.selected_lesson, lick_title, list(final_tags), lick_start, lick_end)
-                            st.success("Saved!")
-                        else:
-                            st.error("Invalid input.")
+            with st.form("lick_edit_form"):
+                 # Memo
+                 new_memo = st.text_area("Memo (Markdown supported)", value=lick.get("memo", ""), height=200)
+                 
+                 # Tags
+                 current_tags = lick.get("tags", [])
+                 all_tags = get_all_tags()
+                 # Allow new tags? Simply multiselect for now for compactness
+                 updated_tags = st.multiselect("Tags", all_tags, default=current_tags)
+                 
+                 if st.form_submit_button("Save Lick Details"):
+                     updates = {"memo": new_memo, "tags": updated_tags}
+                     licks_manager.update_lick(lick['id'], updates)
+                     lick.update(updates) # Session update
+                     st.session_state.current_lick = lick
+                     st.success("Changes saved!")
             
             st.divider()
             
-            # Transcript
-            st.subheader("📜 Full Transcript")
-            transcript_file = lesson_path / "transcript.txt"
-            if transcript_file.exists():
-                with st.expander("Show Transcript", expanded=False):
-                    with open(transcript_file, "r") as f:
-                        st.text(f.read())
-            else:
-                st.caption("No transcript file found.")
+            st.info(f"Source: {lick['lesson_dir']} ({lick['start']}s - {lick['end']}s)")
+            def go_full_review():
+                 st.session_state.selected_lesson = lick['lesson_dir']
+                 st.session_state["nav_mode"] = "Library (Review)"
+                 del st.session_state["current_lick"]
 
-# --- Mode: Lick Library ---
-elif mode == "Lick Library 🎸":
-    st.title("🎸 Lick Library")
-    
-    all_licks = licks_manager.load_licks()
-    
-    # Filter
-    all_tags = sorted(list(set([t for lick in all_licks for t in lick.get("tags", [])])))
-    selected_tags = st.multiselect("Filter by Tags", options=all_tags)
-    
-    if selected_tags:
-        filtered_licks = [l for l in all_licks if any(t in selected_tags for t in l.get("tags", []))]
+            st.button("Go to Full Lesson Review", on_click=go_full_review)
+
     else:
-        filtered_licks = all_licks
-    
-    st.write(f"Showing {len(filtered_licks)} licks")
-    
-    if not filtered_licks:
-        st.info("No licks saved yet. Go to the Player view and save loops as licks!")
-    
-    # Display Grid
-    for lick in filtered_licks:
-        with st.container(border=True):
-            cols = st.columns([0.1, 0.7, 0.2])
-            
-            # Play Button
-            with cols[0]:
-                st.button("▶", key=f"play_lick_{lick['id']}", help="Play Lick", on_click=play_lick, args=(lick,))
-            
-            # Info
-            with cols[1]:
-                st.markdown(f"**{lick['title']}**")
-                st.caption(f"Lesson: {lick['lesson_dir']} | ⏱ {lick['start']}s - {lick['end']}s")
-                # Tags badge style
-                tags_html = " ".join([f"<span style='background:#eee;padding:2px 6px;border-radius:4px;font-size:12px'>{t}</span>" for t in lick['tags']])
-                st.markdown(tags_html, unsafe_allow_html=True)
+        st.title("🎸 Lick Library")
+        
+        all_licks = licks_manager.load_licks()
+        
+        # Filter
+        all_tags = sorted(list(set([t for lick in all_licks for t in lick.get("tags", [])])))
+        selected_tags = st.multiselect("Filter by Tags", options=all_tags)
+        
+        if selected_tags:
+            filtered_licks = [l for l in all_licks if any(t in selected_tags for t in l.get("tags", []))]
+        else:
+            filtered_licks = all_licks
+        
+        st.write(f"Showing {len(filtered_licks)} licks")
+        
+        if not filtered_licks:
+            st.info("No licks saved yet. Go to the Player view and save loops as licks!")
+        
+        # Display Grid
+        for lick in filtered_licks:
+            with st.container(border=True):
+                cols = st.columns([0.1, 0.7, 0.2])
                 
-            # Delete Button
-            with cols[2]:
-                if st.button("🗑️", key=f"del_lick_{lick['id']}", help="Delete Lick"):
-                    licks_manager.delete_lick(lick['id'])
-                    st.rerun()
+                # Play Button
+                with cols[0]:
+                    st.button("▶", key=f"play_lick_{lick['id']}", help="Play Lick", on_click=play_lick, args=(lick,))
+                
+                # Info
+                with cols[1]:
+                    st.markdown(f"**{lick['title']}**")
+                    st.caption(f"Lesson: {lick['lesson_dir']} | ⏱ {lick['start']}s - {lick['end']}s")
+                    # Tags badge style
+                    tags_html = " ".join([f"<span style='background:#eee;padding:2px 6px;border-radius:4px;font-size:12px'>{t}</span>" for t in lick['tags']])
+                    st.markdown(tags_html, unsafe_allow_html=True)
+                    
+                # Delete Button
+                with cols[2]:
+                    if st.button("🗑️", key=f"del_lick_{lick['id']}", help="Delete Lick"):
+                        licks_manager.delete_lick(lick['id'])
+                        st.rerun()
 
 # --- Mode 3: Settings ---
 elif mode == "Settings":
