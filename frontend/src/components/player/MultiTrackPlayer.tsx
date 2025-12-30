@@ -8,10 +8,11 @@ import { cn } from "../../lib/utils"
 interface MultiTrackPlayerProps {
     lessonId: string;
     initialRegion?: { start: number, end: number };
+    onSelectionChange?: (region: { start: number, end: number } | null) => void;
     className?: string;
 }
 
-export function MultiTrackPlayer({ lessonId, initialRegion, className }: MultiTrackPlayerProps) {
+export function MultiTrackPlayer({ lessonId, initialRegion, onSelectionChange, className }: MultiTrackPlayerProps) {
     // Container Refs
     const containerV = useRef<HTMLDivElement>(null)
     const containerG = useRef<HTMLDivElement>(null)
@@ -99,6 +100,7 @@ export function MultiTrackPlayer({ lessonId, initialRegion, className }: MultiTr
                     resize: true
                 });
                 setSelection(initialRegion);
+                onSelectionChange?.(initialRegion);
                 wsG.current?.setTime(initialRegion.start);
                 wsV.current?.setTime(initialRegion.start);
             }
@@ -129,11 +131,15 @@ export function MultiTrackPlayer({ lessonId, initialRegion, className }: MultiTr
             regionsG.current?.getRegions().forEach(r => {
                 if (r !== region) r.remove();
             });
-            setSelection({ start: region.start, end: region.end });
+            const s = { start: region.start, end: region.end };
+            setSelection(s);
+            onSelectionChange?.(s);
         });
 
         regionsG.current.on('region-updated', (region) => {
-            setSelection({ start: region.start, end: region.end });
+            const s = { start: region.start, end: region.end };
+            setSelection(s);
+            onSelectionChange?.(s);
         });
 
         // Manual Loop Sync (Ported from Streamlit app.py)
