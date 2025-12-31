@@ -22,6 +22,20 @@ export const api = {
         return res.data;
     },
 
+    uploadLesson: async (file: File): Promise<{ id: string }> => {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await client.post('/lessons/upload', formData, {
+            headers: { "Content-Type": "multipart/form-data" }
+        });
+        return res.data;
+    },
+
+    getLessonStatus: async (id: string): Promise<{ status: string, progress: number, message: string }> => {
+        const res = await client.get(`/lessons/${id}/status`);
+        return res.data;
+    },
+
     updateLesson: async (id: string, updates: Partial<Lesson>): Promise<Lesson> => {
         const res = await client.put(`/lessons/${id}`, updates);
         return res.data;
@@ -50,6 +64,34 @@ export const api = {
 
     deleteLick: async (id: string): Promise<void> => {
         await client.delete(`/licks/${id}`);
+    },
+
+    // Settings
+    getSettings: async (): Promise<{
+        llm_provider: string,
+        llm_model: string,
+        system_prompt: string,
+        openai_api_key_masked: string | null,
+        openai_api_key_is_set: boolean
+    }> => {
+        try {
+            const res = await client.get("/settings");
+            return res.data;
+        } catch (e) {
+            console.warn("Failed to fetch settings, using defaults");
+            return {
+                llm_provider: "openai",
+                llm_model: "gpt-3.5-turbo",
+                system_prompt: "",
+                openai_api_key_masked: null,
+                openai_api_key_is_set: false
+            };
+        }
+    },
+
+    saveSettings: async (settings: any): Promise<any> => {
+        const res = await client.post("/settings", settings);
+        return res.data;
     },
 
     // Audio helpers

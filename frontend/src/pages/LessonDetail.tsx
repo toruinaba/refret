@@ -1,19 +1,45 @@
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useParams, Link } from "react-router-dom"
-import { ArrowLeft, Plus, X } from "lucide-react"
-import { MultiTrackPlayer } from "../components/player/MultiTrackPlayer"
+import { ArrowLeft, Plus, X, FileText, Tag, Calendar, PlayCircle, ChevronDown, ChevronRight, Music } from "lucide-react"
+import { MultiTrackPlayer, type MultiTrackPlayerRef } from "../components/player/MultiTrackPlayer"
 import { api } from "../lib/api"
+import type { LessonDetail as LessonDetailType } from "../types"
 
 export function LessonDetail() {
     const { id } = useParams<{ id: string }>()
+    const [lesson, setLesson] = useState<LessonDetailType | null>(null)
     const [selection, setSelection] = useState<{ start: number, end: number } | null>(null)
     const [isCreating, setIsCreating] = useState(false)
 
-    // Form State
-    const [title, setTitle] = useState("")
-    const [tags, setTags] = useState("")
-    const [memo, setMemo] = useState("")
+    // Refs
+    const playerRef = useRef<MultiTrackPlayerRef>(null)
+
+    // UI State
+    const [showTranscript, setShowTranscript] = useState(false)
+
+    // Form State (for new Lick)
+    const [createTitle, setCreateTitle] = useState("")
+    const [createTags, setCreateTags] = useState("")
+    const [createMemo, setCreateMemo] = useState("")
     const [submitting, setSubmitting] = useState(false)
+
+    useEffect(() => {
+        if (!id) return;
+        api.getLesson(id).then((data) => setLesson(data as LessonDetailType)).catch(console.error)
+    }, [id])
+
+    const handleSeek = (ts: string) => {
+        // Remove brackets if any, e.g. [01:23] -> 01:23
+        const cleanTs = ts.replace(/[\[\]]/g, "");
+        const parts = cleanTs.split(":").map(Number);
+        if (parts.length === 2) {
+            const time = parts[0] * 60 + parts[1];
+            console.log(`Seeking to: ${ts} -> ${time}s`);
+            playerRef.current?.seekTo(time);
+        } else {
+            console.warn("Invalid timestamp format:", ts);
+        }
+    }
 
     const handleSaveLick = async () => {
         if (!id || !selection) return;
@@ -21,17 +47,17 @@ export function LessonDetail() {
             setSubmitting(true)
             await api.createLick({
                 lesson_dir: id,
-                title: title || "New Lick",
-                tags: tags.split(",").map(t => t.trim()).filter(Boolean),
-                memo,
+                title: createTitle || "New Lick",
+                tags: createTags.split(",").map(t => t.trim()).filter(Boolean),
+                memo: createMemo,
                 start: selection.start,
                 end: selection.end
             })
             alert("Lick saved!")
             setIsCreating(false)
-            setTitle("")
-            setTags("")
-            setMemo("")
+            setCreateTitle("")
+            setCreateTags("")
+            setCreateMemo("")
         } catch (e) {
             console.error(e)
             alert("Failed to save lick")
@@ -43,13 +69,16 @@ export function LessonDetail() {
     if (!id) return <div>Invalid Lesson ID</div>
 
     return (
-        <div className="space-y-6 relative">
+        <div className="space-y-6 relative pb-20">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <Link to="/" className="p-2 hover:bg-neutral-100 rounded-full transition-colors">
                         <ArrowLeft className="w-5 h-5 text-neutral-600" />
                     </Link>
-                    <h1 className="text-2xl font-bold">{id}</h1>
+                    <div className="flex flex-col">
+                        <span className="text-xs text-neutral-500 font-mono">{id}</span>
+                        <h1 className="text-2xl font-bold">{lesson?.title || id}</h1>
+                    </div>
                 </div>
 
                 {selection && !isCreating && (
@@ -62,8 +91,131 @@ export function LessonDetail() {
                 )}
             </div>
 
-            <div className="max-w-4xl mx-auto">
-                <MultiTrackPlayer lessonId={id} onSelectionChange={setSelection} />
+            <div className="max-w-4xl mx-auto space-y-8">
+                <div className="bg-neutral-50 p-6 rounded-xl border border-neutral-200 shadow-sm sticky top-4 z-20">
+                    <MultiTrackPlayer ref={playerRef} lessonId={id} onSelectionChange={setSelection} />
+                </div>
+
+                {/* AI Analysis Section (Summary & Key Points) */}
+                {lesson && (lesson.summary || (lesson.key_points && lesson.key_points.length > 0)) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in slide-in-from-bottom-4 duration-500">
+                        {/* Summary Card */}
+                        <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm space-y-4">
+                            <h3 className="flex items-center gap-2 font-semibold text-neutral-900 border-b border-neutral-100 pb-2">
+                                <FileText className="w-4 h-4 text-orange-600" /> Summary
+                            </h3>
+                            <p className="text-sm text-neutral-600 leading-relaxed whitespace-pre-wrap">
+                                {lesson.summary || "No summary available."}
+                            </p>
+
+                            {/* Chords if any */}
+                            {lesson.chords && lesson.chords.length > 0 && (
+                                <div className="pt-4 border-t border-neutral-100">
+                                    <h4 className="text-xs font-semibold text-neutral-500 uppercase mb-2">Chords Mentioned</h4>
+                                    <div className="flex flex-wrap gap-2">
+                                        {lesson.chords.map(chord => (
+                                            <span key={chord} className="px-2 py-1 bg-yellow-50 text-yellow-700 border border-yellow-100 rounded text-xs font-mono font-bold">
+                                                {chord}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Key Points Card */}
+                        <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm space-y-4">
+                            <h3 className="flex items-center gap-2 font-semibold text-neutral-900 border-b border-neutral-100 pb-2">
+                                <Music className="w-4 h-4 text-orange-600" /> Key Points
+                            </h3>
+                            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                                {lesson.key_points?.map((kp, i) => {
+                                    const isStr = typeof kp === 'string';
+                                    const timestamp = isStr ? null : (kp as any).timestamp;
+                                    const point = isStr ? kp : (kp as any).point;
+
+                                    return (
+                                        <div key={i} className="flex gap-3 items-start group hover:bg-neutral-50 p-2 rounded-lg transition-colors">
+                                            {timestamp && (
+                                                <button
+                                                    onClick={() => handleSeek(timestamp)}
+                                                    className="flex items-center gap-1.5 text-xs font-mono bg-orange-100 text-orange-700 px-2 py-1.5 rounded hover:bg-orange-200 transition-colors shrink-0 mt-0.5"
+                                                >
+                                                    <PlayCircle className="w-3 h-3" />
+                                                    {timestamp}
+                                                </button>
+                                            )}
+                                            <p className="text-sm text-neutral-700">{point}</p>
+                                        </div>
+                                    )
+                                })}
+                                {(!lesson.key_points || lesson.key_points.length === 0) && (
+                                    <p className="text-neutral-400 text-sm italic">No key points extracted.</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Transcript Accordion */}
+                {lesson && (
+                    <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
+                        <button
+                            onClick={() => setShowTranscript(!showTranscript)}
+                            className="w-full flex items-center justify-between p-4 bg-neutral-50 hover:bg-white transition-colors border-b border-neutral-100"
+                        >
+                            <span className="font-semibold text-sm text-neutral-700 flex items-center gap-2">
+                                <FileText className="w-4 h-4" /> Full Transcript
+                            </span>
+                            {showTranscript ? <ChevronDown className="w-4 h-4 text-neutral-400" /> : <ChevronRight className="w-4 h-4 text-neutral-400" />}
+                        </button>
+                        {showTranscript && (
+                            <div className="p-6 max-h-[500px] overflow-y-auto bg-white">
+                                <p className="text-xs text-neutral-600 whitespace-pre-wrap leading-relaxed font-mono">
+                                    {lesson.transcript || "No transcript available."}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+
+                {/* Lesson Metadata (Legacy / Manual) */}
+                {lesson && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8 border-t border-neutral-200">
+                        <div className="md:col-span-2 space-y-4">
+                            <div>
+                                <h4 className="text-xs font-semibold text-neutral-500 uppercase mb-2">Manual Memo</h4>
+                                <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-200 text-sm text-neutral-600 whitespace-pre-wrap">
+                                    {lesson.memo || "No memo available."}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <h4 className="text-xs font-semibold text-neutral-500 uppercase flex items-center gap-2 mb-2">
+                                    <Tag className="w-3 h-3" /> Tags
+                                </h4>
+                                <div className="flex flex-wrap gap-2">
+                                    {lesson.tags && lesson.tags.length > 0 ? lesson.tags.map(tag => (
+                                        <span key={tag} className="px-2 py-1 bg-neutral-100 rounded text-xs text-neutral-700">
+                                            {tag}
+                                        </span>
+                                    )) : <span className="text-sm text-neutral-400">No tags</span>}
+                                </div>
+                            </div>
+                            <div>
+                                <h4 className="text-xs font-semibold text-neutral-500 uppercase flex items-center gap-2 mb-2">
+                                    <Calendar className="w-3 h-3" /> Created
+                                </h4>
+                                <p className="text-sm font-mono text-neutral-900">
+                                    {lesson.created_at || "Unknown"}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Creation Modal/Overlay */}
@@ -79,7 +231,7 @@ export function LessonDetail() {
                             <div>
                                 <label className="block text-sm font-medium text-neutral-700 mb-1">Title</label>
                                 <input
-                                    value={title} onChange={e => setTitle(e.target.value)}
+                                    value={createTitle} onChange={e => setCreateTitle(e.target.value)}
                                     className="w-full border border-neutral-300 rounded-md px-3 py-2"
                                     placeholder="Awesome Lick"
                                 />
@@ -87,7 +239,7 @@ export function LessonDetail() {
                             <div>
                                 <label className="block text-sm font-medium text-neutral-700 mb-1">Tags (comma separated)</label>
                                 <input
-                                    value={tags} onChange={e => setTags(e.target.value)}
+                                    value={createTags} onChange={e => setCreateTags(e.target.value)}
                                     className="w-full border border-neutral-300 rounded-md px-3 py-2"
                                     placeholder="blues, slow, bend"
                                 />
@@ -95,7 +247,7 @@ export function LessonDetail() {
                             <div>
                                 <label className="block text-sm font-medium text-neutral-700 mb-1">Memo</label>
                                 <textarea
-                                    value={memo} onChange={e => setMemo(e.target.value)}
+                                    value={createMemo} onChange={e => setCreateMemo(e.target.value)}
                                     className="w-full border border-neutral-300 rounded-md px-3 py-2 h-24"
                                     placeholder="Notes about fingering, difficulty etc."
                                 />

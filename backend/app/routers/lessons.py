@@ -1,15 +1,131 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
 from typing import List, Dict, Any
+import shutil
+import json
+import traceback
+from datetime import datetime
 
-from backend.app.services.store import StoreService
-from backend.app.core.config import get_settings
+from app.services.store import StoreService
+from app.core.config import get_settings
 
 router = APIRouter()
 
 def get_store():
     return StoreService()
+
+# --- Background Processing Task ---
+def process_lesson_background(lesson_id: str, file_path: Path, store: StoreService):
+    status_file = store.data_dir / lesson_id / "status.json"
+    
+    def update_status(status: str, progress: float, message: str):
+        with open(status_file, "w") as f:
+            json.dump({
+                "status": status,
+                "progress": progress,
+                "message": message,
+                "updated_at": datetime.now().isoformat()
+            }, f)
+
+    try:
+        from app.services.audio import AudioProcessor
+        processor = AudioProcessor()
+
+        # Step 1: Separation
+        update_status("processing", 0.05, "Separating Audio (Demucs)... This takes time.")
+        
+        # Ensure we have a WAV file for processing (handles m4a etc)
+        proc_wav_path = processor.prepare_wav(file_path)
+        
+        try:
+            vocals_path, guitar_path = processor.separate_audio(proc_wav_path, store.data_dir / lesson_id)
+        finally:
+            # Cleanup temp proc wav
+            if proc_wav_path.exists() and proc_wav_path != file_path:
+                proc_wav_path.unlink()
+        
+        # Step 2: Transcription
+        update_status("processing", 0.5, "Transcribing Vocals (Whisper)...")
+        transcript_text, segments = processor.transcribe(vocals_path)
+        
+        # Step 3: Summarization
+        update_status("processing", 0.8, "Summarizing (LLM)...")
+        summary_data = processor.summarize(segments)
+        
+        # Step 4: Finalize
+        update_status("processing", 0.95, "Finalizing...")
+        
+        # Save results to separate files (Legacy format)
+        processor.save_results(store.data_dir / lesson_id, segments, transcript_text, summary_data)
+        
+        metadata = {
+            "title": f"Lesson {lesson_id}",
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "tags": [],
+            "memo": ""
+        }
+        
+        store.save_lesson_metadata(lesson_id, metadata)
+        update_status("completed", 1.0, "Ready")
+
+    except Exception as e:
+        print(f"Processing failed: {e}")
+        traceback.print_exc()
+        update_status("failed", 0.0, str(e))
+
+# --- Endpoints ---
+
+@router.post("/upload")
+async def upload_lesson(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    store: StoreService = Depends(get_store)
+):
+    """Upload a new lesson audio file for processing."""
+    # Generate ID (Timestamp based)
+    lesson_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    lesson_dir = store.data_dir / lesson_id
+    lesson_dir.mkdir(exist_ok=True)
+    
+    # Save Uploaded File
+    ext = Path(file.filename).suffix
+    if not ext: ext = ".mp3"
+    file_path = lesson_dir / f"original{ext}"
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    # Init Status
+    status_file = lesson_dir / "status.json"
+    with open(status_file, "w") as f:
+        json.dump({"status": "queued", "progress": 0.0, "message": "In Queue"}, f)
+
+    # Trigger Background Task
+    background_tasks.add_task(process_lesson_background, lesson_id, file_path, store)
+    
+    return {"id": lesson_id, "message": "Upload successful, processing started."}
+
+@router.get("/{lesson_id}/status")
+async def get_lesson_status(lesson_id: str, store: StoreService = Depends(get_store)):
+    """Check processing status of a lesson."""
+    status_file = store.data_dir / lesson_id / "status.json"
+    
+    if not status_file.exists():
+        # Fallback: If metadata exists, it's completed
+        if (store.data_dir / lesson_id / "metadata.json").exists():
+            return {"status": "completed", "progress": 1.0, "message": "Ready"}
+        # If folder exists but no status/metadata?
+        if (store.data_dir / lesson_id).exists():
+             return {"status": "unknown", "progress": 0.0, "message": "No status info"}
+        raise HTTPException(status_code=404, detail="Lesson not found")
+        
+    with open(status_file, "r") as f:
+        try:
+            return json.load(f)
+        except:
+             return {"status": "unknown", "progress": 0.0, "message": "Read error"}
 
 @router.get("/", response_model=List[Dict[str, Any]])
 async def list_lessons(store: StoreService = Depends(get_store)):

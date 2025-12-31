@@ -1,77 +1,76 @@
-# Guitar Lesson Review App (RefRet)
+# Refret Web (Guitar Lesson Review App)
 
-ギターレッスンの音源をアップロードし、ボーカル（会話）と楽器（ギター演奏）を分離、会話内容を文字起こし・要約するStreamlitアプリケーションです。
+Refret is a modern web application for guitarists to review and study their lessons. It separates audio tracks (vocals vs guitar), provides transcription and summarization using AI, and features a powerful multi-track audio player for practicing.
 
+## Architecture
 
-## 機能概要
+The project has been migrated from a monolithic Streamlit app to a modern web stack:
 
-1.  **音源分離 (Audio Separation)**
-    *   **Demucs** (Hybrid Transformer Demucs) モデルを使用。
-    *   アップロードされた音源から「ボーカル（会話）」と「ギター/バッキングトラック」を分離します。
-    *   **特徴**: ギターのみのトラックを作成する際、単純な引き算ではなく、ドラム・ベース・その他のステムを合成することで、会話の音声をきれいに除去しています。
+*   **Backend**: Python (FastAPI)
+    *   Handles audio processing (Demucs), transcription (Faster-Whisper), and summarization (LLM).
+    *   Manages data persistence (Filesystem-based).
+    *   Serves REST API for frontend.
+*   **Frontend**: React (Vite + TypeScript)
+    *   **UI Framework**: Tailwind CSS v4
+    *   **Audio Player**: Wavesurfer.js (Multi-track sync, Regions, Speed control)
+    *   **State Management**: React Hooks + Axios
 
-2.  **文字起こし (Transcription)**
-    *   **Faster-Whisper** を使用。
-    *   分離されたボーカルトラックから会話内容をテキスト化します。
-    *   日本語（`language="ja"`）に最適化された `small` モデルを使用し、高速かつ高精度な認識を実現しています。
+## Key Features
 
-3.  **要約 (Summarization)**
-    *   **LLM (Large Language Model)** を統合。
-    *   文字起こしテキストから、レッスンの要点、登場したコード、練習フレーズなどを抽出・要約します。
-    *   **Settingsタブ**から、**OpenAI API** (GPT-4o-mini等) および **Ollama** (ローカルLLM) の切り替えやプロンプトの編集が可能です。
+1.  **Audio Separation**: Automatically separates uploaded lessons into Vocals and Guitar tracks using Hybrid Transformer Demucs.
+2.  **Lesson Library**: Organize lessons with tags and memos. Search and filter your practice history.
+3.  **Lick Library**: Save specific phrases (loops) from lessons as "Licks". Build your own library of riffs to practice.
+4.  **Multi-Track Player**:
+    *   **Sync Playback**: Listen to vocals and guitar tracks simultaneously or individually.
+    *   **Mute/Solo**: Isolate the guitar track to hear nuances.
+    *   **Looping**: Drag to create loop regions for repetitive practice.
+    *   **Speed Control**: Slow down tricky parts without changing pitch.
+5.  **AI Integration**: Summarizes lesson content and extracts key points using OpenAI or Ollama.
 
-4.  **インタラクティブ・プレイヤー (Study Player)**
-    *   **Visual Waveform**: Wavesurfer.js を使用したデュアル波形表示（ボーカル＝紫、ギター＝オレンジ）。
-    *   **2トラック同時再生・同期**: ボーカルとギターのトラックが同期して再生されます。
-    *   **トラック操作 (Mute/Unmute)**: ボーカル・ギターそれぞれのトラックを個別にミュート/ミュート解除可能。
-    *   **A-B ループ**: ギター波形上をドラッグして範囲指定することで、特定フレーズをループ再生できます。ドラッグで範囲作成、クリックで再生位置変更。
-    *   **速度調整**: ピッチを変えずに 0.25倍〜1.5倍速まで調整可能。
-    *   **インタラクティブな要約**: 要約内のタイムスタンプをクリックすると、該当箇所へプレイヤーがシークします。
-    *   **ダウンロード**: 分離されたトラック（MP3）およびオリジナル音源をダウンロード可能。
+## Installation & Setup
 
-5.  **ライブラリ管理 (Library Dashboard)**
-    *   **ダッシュボード表示**: 保存されたレッスンを一覧表示。タイトル、タグ、日付、メモで検索・ソートが可能。
-    *   **メタデータ管理**: 各レッスンに「タグ」と「メモ」を付与して整理できます。
-    *   **Markdownメモ**: メモ欄はMarkdown記法に対応。練習ノートとして活用できます。
+### Prerequisites
+*   Node.js (v18+)
+*   Python (3.13+)
+*   FFmpeg (Installed and in system PATH)
 
-## インストールとセットアップ
-
-### 必要条件
-*   Python 3.13 以上
-*   [FFmpeg](https://ffmpeg.org/) (システムパスに通っていること)
-
-### インストール手順
-
-1.  リポジトリをクローンまたはダウンロードします。
-
-2.  依存ライブラリをインストールします。
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3.  (オプション) 環境変数ファイル `.env` を作成しておくと、デフォルト値を設定できます。
-    ※ アプリ起動後の「Settings」タブでも設定可能です。
-    ```bash
-    # .env ファイルの例
-    LLM_PROVIDER=openai
-    OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxx
-    LLM_MODEL=gpt-4o-mini
-    ```
-
-### 実行方法
-
-以下のコマンドでアプリケーションを起動します。
+### 1. Backend Setup
 
 ```bash
-streamlit run app.py
+# Navigate to project root
+pip install -r backend/requirements.txt
+
+# Start the Backend Server
+./start_backend.sh
+# OR
+uvicorn backend.app.main:app --reload --port 8000
 ```
+Backend runs at `http://localhost:8000`. API Docs at `/docs`.
 
-ブラウザが立ち上がり、アプリが表示されます。
-1. **New Lesson**: 音声ファイルをアップロードして解析を実行。
-2. **Library**: 解析結果の確認、プレイヤーでの学習。
-3. **Settings**: APIキーやプロンプトの設定。
+### 2. Frontend Setup
 
-## トラブルシューティング
+```bash
+# Navigate to frontend directory
+cd frontend
 
-*   **依存関係エラー**: `soundfile` や `av` 関連のエラーが出る場合は、OSのライブラリ不足の可能性があります（Macの場合は `brew install ffmpeg` 等を確認）。
-*   **分離に時間がかかる**: Demucsの処理はCPU負荷が高いです。初回実行時はモデルのダウンロードも行われます。
+# Install dependencies
+npm install
+
+# Start Development Server
+npm run dev
+```
+Frontend runs at `http://localhost:5173`.
+
+## Usage
+
+1.  **Upload (Legacy)**: Currently, new audio uploads are processed via the legacy Streamlit app scripts or manual placement in `data/` (Upload UI migration is planned).
+2.  **Library**: Open the Web App to view processed lessons.
+3.  **Practice**: Click a lesson to open the Player.
+    *   **Save Lick**: Select a region on the waveform and click "Save Lick" to add it to your Lick Library.
+4.  **Licks**: Review saved phrases in the "Lick Library" tab.
+
+## Data Storage
+
+Data is stored in the `data/` directory:
+*   `data/lessons/{id}/`: Audio files and metadata.json for lessons.
+*   `data/licks.json`: Database of saved licks.

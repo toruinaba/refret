@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 
-from backend.app.services.store import StoreService
+from app.services.store import StoreService
 
 router = APIRouter()
 

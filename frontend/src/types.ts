@@ -9,7 +9,7 @@ export interface Lesson {
 export interface LessonDetail extends Lesson {
     transcript?: string;
     summary?: string;
-    key_points?: Array<{ point: string, timestamp: string }>;
+    key_points?: Array<string | { point: string, timestamp: string }>;
     chords?: string[];
 }
 

@@ -1,4 +1,5 @@
 import os
+import json
 import subprocess
 from pathlib import Path
 import soundfile as sf
@@ -10,8 +11,8 @@ from faster_whisper import WhisperModel
 import openai
 from langchain_openai import ChatOpenAI
 
-from backend.app.core.config import get_settings
-from backend.app.schemas.lesson import LessonSummary
+from app.core.config import get_settings
+from app.schemas.lesson import LessonSummary
 
 class AudioProcessor:
     def __init__(self):
@@ -22,15 +23,42 @@ class AudioProcessor:
         # Configure LLM
         self._configure_llm()
 
+    def _get_current_key(self):
+        from app.services.store import StoreService
+        store = StoreService()
+        overrides = store.get_settings_override()
+        return overrides.get("openai_api_key") or self.settings.OPENAI_API_KEY
+
     def _configure_llm(self):
         """Configure LLM client based on current settings."""
         if self.settings.LLM_PROVIDER == "openai":
-            if self.settings.OPENAI_API_KEY:
-                openai.api_key = self.settings.OPENAI_API_KEY
+            key = self._get_current_key()
+            if key:
+                openai.api_key = key
+
+    def prepare_wav(self, input_path: Path) -> Path:
+        """Convert input audio to WAV format for processing (ffmpeg)."""
+        output_path = input_path.parent / "proc_temp.wav"
+        print(f"Converting to WAV for processing: {input_path} -> {output_path}")
+        try:
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", str(input_path),
+                "-ac", "2", 
+                "-ar", "44100", 
+                "-f", "wav",
+                str(output_path)
+            ]
+            subprocess.run(cmd, check=True, capture_output=True)
+            return output_path
+        except subprocess.CalledProcessError as e:
+            print(f"FFmpeg wav conversion failed: {e.stderr.decode() if e.stderr else str(e)}")
+            raise e
 
     def separate_audio(self, file_path: Path, lesson_dir: Path):
         """
-        Separate audio into vocals and guitar using Demucs (Manual Inference).
+        Separate audio into vocals and guitar using Demucs.
+        Expects WAV input for robust loading.
         returns: (vocals_path, guitar_path)
         """
         print(f"Separating audio (In-Process Manual): {file_path}")
@@ -156,6 +184,14 @@ class AudioProcessor:
         """Summarize using LangChain Structured Output."""
         print(f"Summarizing using {self.settings.LLM_PROVIDER}...")
         
+        # Load overrides
+        from app.services.store import StoreService
+        store = StoreService()
+        overrides = store.get_settings_override()
+        
+        system_instruction = overrides.get("system_prompt") or self.settings.SYSTEM_PROMPT
+        model_name = overrides.get("llm_model") or self.settings.LLM_MODEL
+        
         # Format transcript
         transcript_with_timestamps = ""
         for seg in segments_data:
@@ -165,16 +201,15 @@ class AudioProcessor:
             timestamp = f"{m:02d}:{s:02d}"
             transcript_with_timestamps += f"[{timestamp}] {seg['text']}\n"
         
-        system_instruction = self.settings.SYSTEM_PROMPT
-        
         try:
             if self.settings.LLM_PROVIDER == "openai":
-                if not self.settings.OPENAI_API_KEY:
+                key = self._get_current_key()
+                if not key:
                     return {"error": "No OpenAI API Key found", "summary": "N/A"}
                 
                 llm = ChatOpenAI(
-                    model=self.settings.LLM_MODEL, 
-                    api_key=self.settings.OPENAI_API_KEY,
+                    model=model_name, 
+                    api_key=key,
                     temperature=0
                 )
                 
@@ -195,3 +230,17 @@ class AudioProcessor:
         except Exception as e:
             print(f"Summarization error: {e}")
             return {"error": str(e)}
+
+    def save_results(self, lesson_dir: Path, segments: list, transcript_text: str, summary_json: dict):
+        """Save processing results to separate files (Legacy format)."""
+        # Save transcript JSON
+        with open(lesson_dir / "transcript.json", "w") as f:
+            json.dump(segments, f, indent=2)
+        
+        # Save transcript Text
+        with open(lesson_dir / "transcript.txt", "w") as f:
+            f.write(transcript_text)
+            
+        # Save summary
+        with open(lesson_dir / "summary.json", "w") as f:
+            json.dump(summary_json, f, indent=2)

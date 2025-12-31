@@ -11,6 +11,13 @@ export function LickDetail() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
 
+    // ... inside LickDetail component
+    const [isEditing, setIsEditing] = useState(false)
+    const [editTitle, setEditTitle] = useState("")
+    const [editTags, setEditTags] = useState("")
+    const [editMemo, setEditMemo] = useState("")
+    const [saving, setSaving] = useState(false)
+
     useEffect(() => {
         if (!id) return;
         const fetchLick = async () => {
@@ -27,26 +34,85 @@ export function LickDetail() {
         fetchLick()
     }, [id])
 
+    const startEditing = () => {
+        if (!lick) return
+        setEditTitle(lick.title)
+        setEditTags(lick.tags.join(", "))
+        setEditMemo(lick.memo)
+        setIsEditing(true)
+    }
+
+    const handleUpdate = async () => {
+        if (!lick || !id) return
+        try {
+            setSaving(true)
+            const updated = await api.updateLick(id, {
+                title: editTitle,
+                tags: editTags.split(",").map(t => t.trim()).filter(Boolean),
+                memo: editMemo
+            })
+            setLick(updated)
+            setIsEditing(false)
+        } catch (e) {
+            console.error(e)
+            setError("Failed to update lick")
+        } finally {
+            setSaving(false)
+        }
+    }
+
     if (loading) return <div className="text-center p-8">Loading lick...</div>
     if (error || !lick) return <div className="text-center p-8 text-red-500">{error || "Lick not found"}</div>
 
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex items-center gap-4">
-                <Link to="/licks" className="p-2 hover:bg-neutral-100 rounded-full transition-colors">
-                    <ArrowLeft className="w-5 h-5 text-neutral-600" />
-                </Link>
-                <div>
-                    <div className="flex items-center gap-2 text-neutral-500 text-sm mb-1">
-                        <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded text-xs font-semibold">Lick</span>
-                        <span>From Lesson: <Link to={`/lesson/${lick.lesson_dir}`} className="hover:underline text-orange-600">{lick.lesson_dir}</Link></span>
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4 flex-1">
+                    <Link to="/licks" className="p-2 hover:bg-neutral-100 rounded-full transition-colors">
+                        <ArrowLeft className="w-5 h-5 text-neutral-600" />
+                    </Link>
+                    <div className="flex-1">
+                        <div className="flex items-center gap-2 text-neutral-500 text-sm mb-1">
+                            <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded text-xs font-semibold">Lick</span>
+                            <span>From Lesson: <Link to={`/lesson/${lick.lesson_dir}`} className="hover:underline text-orange-600">{lick.lesson_dir}</Link></span>
+                        </div>
+                        {isEditing ? (
+                            <input
+                                value={editTitle}
+                                onChange={e => setEditTitle(e.target.value)}
+                                className="text-2xl font-bold text-neutral-900 border-b border-neutral-300 focus:border-orange-500 outline-none w-full bg-transparent"
+                            />
+                        ) : (
+                            <h1 className="text-2xl font-bold text-neutral-900">{lick.title}</h1>
+                        )}
                     </div>
-                    <h1 className="text-2xl font-bold text-neutral-900">{lick.title}</h1>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                    {isEditing ? (
+                        <>
+                            <button onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-100 rounded-md">
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleUpdate}
+                                disabled={saving}
+                                className="px-3 py-1.5 text-sm bg-orange-600 text-white hover:bg-orange-700 rounded-md disabled:opacity-50"
+                            >
+                                {saving ? "Saving..." : "Save Changes"}
+                            </button>
+                        </>
+                    ) : (
+                        <button onClick={startEditing} className="px-3 py-1.5 text-sm border border-neutral-200 hover:bg-neutral-50 rounded-md text-neutral-700">
+                            Edit Details
+                        </button>
+                    )}
                 </div>
             </div>
 
-            {/* Player */}
+            {/* Player (Unchanged) */}
             <div className="bg-neutral-50 p-6 rounded-xl border border-neutral-200">
                 <MultiTrackPlayer
                     lessonId={lick.lesson_dir}
@@ -61,9 +127,18 @@ export function LickDetail() {
                         <h3 className="flex items-center gap-2 font-semibold text-neutral-900 mb-4">
                             <FileText className="w-4 h-4" /> Memo
                         </h3>
-                        <div className="prose prose-sm max-w-none text-neutral-600 whitespace-pre-wrap">
-                            {lick.memo || "No memo available."}
-                        </div>
+                        {isEditing ? (
+                            <textarea
+                                value={editMemo}
+                                onChange={e => setEditMemo(e.target.value)}
+                                className="w-full h-32 p-2 border border-neutral-300 rounded-md text-sm"
+                                placeholder="Write your practice notes here..."
+                            />
+                        ) : (
+                            <div className="prose prose-sm max-w-none text-neutral-600 whitespace-pre-wrap">
+                                {lick.memo || "No memo available."}
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -81,13 +156,22 @@ export function LickDetail() {
                             <h4 className="text-xs font-semibold text-neutral-500 uppercase flex items-center gap-2 mb-2">
                                 <Tag className="w-3 h-3" /> Tags
                             </h4>
-                            <div className="flex flex-wrap gap-2">
-                                {lick.tags && lick.tags.length > 0 ? lick.tags.map(tag => (
-                                    <span key={tag} className="px-2 py-1 bg-neutral-100 rounded text-xs text-neutral-700">
-                                        {tag}
-                                    </span>
-                                )) : <span className="text-sm text-neutral-400">No tags</span>}
-                            </div>
+                            {isEditing ? (
+                                <input
+                                    value={editTags}
+                                    onChange={e => setEditTags(e.target.value)}
+                                    className="w-full p-2 border border-neutral-300 rounded-md text-sm"
+                                    placeholder="blues, lick, fast"
+                                />
+                            ) : (
+                                <div className="flex flex-wrap gap-2">
+                                    {lick.tags && lick.tags.length > 0 ? lick.tags.map(tag => (
+                                        <span key={tag} className="px-2 py-1 bg-neutral-100 rounded text-xs text-neutral-700">
+                                            {tag}
+                                        </span>
+                                    )) : <span className="text-sm text-neutral-400">No tags</span>}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

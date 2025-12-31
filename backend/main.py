@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from backend.app.routers import lessons, licks
+from app.routers import lessons, licks, settings as settings_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -36,9 +36,8 @@ app.add_middleware(
 
 app.include_router(lessons.router, prefix="/api/lessons", tags=["lessons"])
 app.include_router(licks.router, prefix="/api/licks", tags=["licks"])
+app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])
 
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "message": "Refret Backend is running 🎸"}
-
-

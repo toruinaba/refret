@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react"
 import WaveSurfer from "wavesurfer.js"
 import RegionsPlugin from "wavesurfer.js/dist/plugins/regions.js"
 import { TransportControls } from "./TransportControls"
@@ -12,7 +12,11 @@ interface MultiTrackPlayerProps {
     className?: string;
 }
 
-export function MultiTrackPlayer({ lessonId, initialRegion, onSelectionChange, className }: MultiTrackPlayerProps) {
+export interface MultiTrackPlayerRef {
+    seekTo: (time: number) => void;
+}
+
+export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayerProps>(({ lessonId, initialRegion, onSelectionChange, className }, ref) => {
     // Container Refs
     const containerV = useRef<HTMLDivElement>(null)
     const containerG = useRef<HTMLDivElement>(null)
@@ -32,6 +36,28 @@ export function MultiTrackPlayer({ lessonId, initialRegion, onSelectionChange, c
     const [currentTime, setCurrentTime] = useState(0)
     const [totalTime, setTotalTime] = useState(0)
     const [selection, setSelection] = useState<{ start: number, end: number } | null>(null)
+
+    // Expose seekTo
+    useImperativeHandle(ref, () => ({
+        seekTo: (time: number) => {
+            const duration = wsG.current?.getDuration() || 0;
+            console.log(`[MultiTrackPlayer] seekTo: ${time}s (Duration: ${duration}s, Ready: ${isReady})`);
+
+            if (isReady && duration > 0) {
+                const progress = time / duration;
+                // Clamp progress
+                const p = Math.max(0, Math.min(1, progress));
+
+                wsG.current?.seekTo(p);
+                wsV.current?.seekTo(p);
+
+                // Auto-play
+                wsG.current?.play();
+                wsV.current?.play();
+                setIsPlaying(true);
+            }
+        }
+    }));
 
     // --- Initialization ---
     useEffect(() => {
@@ -249,4 +275,6 @@ export function MultiTrackPlayer({ lessonId, initialRegion, onSelectionChange, c
             </div>
         </div>
     )
-}
+})
+
+MultiTrackPlayer.displayName = "MultiTrackPlayer"

@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any
 
-from backend.app.core.config import get_settings
+from app.core.config import get_settings
 
 class StoreService:
     def __init__(self):
@@ -37,22 +37,42 @@ class StoreService:
         return lessons
 
     def get_lesson_metadata(self, lesson_id: str) -> Dict[str, Any]:
-        path = self.data_dir / lesson_id / "metadata.json"
-        if path.exists():
+        folder = self.data_dir / lesson_id
+        meta_path = folder / "metadata.json"
+        
+        # Base metadata
+        data = {"tags": [], "memo": "", "created_at": ""}
+        if meta_path.exists():
             try:
-                with open(path, "r") as f:
-                    return json.load(f)
+                with open(meta_path, "r") as f:
+                    data.update(json.load(f))
             except:
                 pass
+        else:
+             # Try to infer creation time from folder if metadata missing
+             if folder.exists():
+                ctime = datetime.fromtimestamp(folder.stat().st_ctime).strftime('%Y-%m-%d')
+                data["created_at"] = ctime
+
+        # Load Transcript
+        transcript_path = folder / "transcript.txt"
+        if transcript_path.exists():
+            with open(transcript_path, "r") as f:
+                data["transcript"] = f.read()
         
-        # Default
-        # Try to infer creation time from folder
-        folder = self.data_dir / lesson_id
-        ctime = ""
-        if folder.exists():
-            ctime = datetime.fromtimestamp(folder.stat().st_ctime).strftime('%Y-%m-%d')
-            
-        return {"tags": [], "memo": "", "created_at": ctime}
+        # Load Summary
+        summary_path = folder / "summary.json"
+        if summary_path.exists():
+             try:
+                 with open(summary_path, "r") as f:
+                     summary_data = json.load(f)
+                     data["summary"] = summary_data.get("summary", "")
+                     data["key_points"] = summary_data.get("key_points", [])
+                     data["chords"] = summary_data.get("chords", [])
+             except:
+                 pass
+                 
+        return data
 
     def save_lesson_metadata(self, lesson_id: str, metadata: Dict[str, Any]):
         folder = self.data_dir / lesson_id
@@ -154,3 +174,20 @@ class StoreService:
             for t in lesson.get("tags", []):
                 tags.add(t)
         return sorted(list(tags))
+
+    def get_settings_override(self) -> Dict[str, Any]:
+        """Load settings from data/settings.json."""
+        path = self.data_dir / "settings.json"
+        if path.exists():
+            try:
+                with open(path, "r") as f:
+                    return json.load(f)
+            except:
+                 pass
+        return {}
+
+    def save_settings_override(self, settings: Dict[str, Any]):
+        """Save settings to data/settings.json."""
+        path = self.data_dir / "settings.json"
+        with open(path, "w") as f:
+            json.dump(settings, f, indent=2)
