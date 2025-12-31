@@ -37,6 +37,12 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
     const [currentTime, setCurrentTime] = useState(0)
     const [totalTime, setTotalTime] = useState(0)
     const [selection, setSelection] = useState<{ start: number, end: number } | null>(null)
+    const [loop, setLoop] = useState(true)
+    const loopRef = useRef(loop)
+
+    useEffect(() => {
+        loopRef.current = loop;
+    }, [loop]);
 
     // Expose seekTo
     useImperativeHandle(ref, () => ({
@@ -190,12 +196,19 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
             // Check if we are actually playing, otherwise this might be a seek/init event
             if (!wsG.current?.isPlaying()) return;
 
-            // Loop back
-            const start = region.start;
-            wsG.current?.setTime(start);
-            wsV.current?.setTime(start);
-            wsG.current?.play();
-            wsV.current?.play();
+            if (loopRef.current) {
+                // Loop back
+                const start = region.start;
+                wsG.current?.setTime(start);
+                wsV.current?.setTime(start);
+                wsG.current?.play();
+                wsV.current?.play();
+            } else {
+                // Pause
+                wsG.current?.pause();
+                wsV.current?.pause();
+                setIsPlaying(false);
+            }
         });
 
         regionsG.current.on('region-clicked', (region, e) => {
@@ -253,6 +266,12 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
         wsG.current?.setMuted(guitarMuted);
     }, [guitarMuted]);
 
+    const handleClearSelection = useCallback(() => {
+        regionsG.current?.clearRegions();
+        setSelection(null);
+        onSelectionChange?.(null);
+    }, [onSelectionChange]);
+
 
     return (
         <div className={cn("bg-white rounded-xl border border-neutral-200 shadow-sm p-4", className)}>
@@ -270,6 +289,10 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
                 onGuitarMuteChange={setGuitarMuted}
                 currentTime={currentTime}
                 totalTime={totalTime}
+                loop={loop}
+                onLoopChange={setLoop}
+                hasSelection={!!selection}
+                onClearSelection={handleClearSelection}
             />
 
             {/* Waveforms */}

@@ -1,5 +1,5 @@
 import type { HTMLAttributes } from "react"
-import { Play, Pause, ZoomIn } from "lucide-react"
+import { Play, Pause, ZoomIn, Repeat, X } from "lucide-react"
 import { cn } from "../../lib/utils"
 
 interface TransportControlsProps extends HTMLAttributes<HTMLDivElement> {
@@ -15,6 +15,10 @@ interface TransportControlsProps extends HTMLAttributes<HTMLDivElement> {
     onGuitarMuteChange: (muted: boolean) => void;
     currentTime: number;
     totalTime: number;
+    loop: boolean;
+    onLoopChange: (loop: boolean) => void;
+    hasSelection: boolean;
+    onClearSelection: () => void;
 }
 
 export function TransportControls({
@@ -31,6 +35,10 @@ export function TransportControls({
     onGuitarMuteChange,
     currentTime,
     totalTime,
+    loop,
+    onLoopChange,
+    hasSelection,
+    onClearSelection,
     ...props
 }: TransportControlsProps) {
 
@@ -49,6 +57,29 @@ export function TransportControls({
             >
                 {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
             </button>
+
+            {/* Loop Toggle */}
+            <button
+                onClick={() => onLoopChange(!loop)}
+                className={cn(
+                    "w-10 h-10 rounded-full flex items-center justify-center transition-colors shrink-0",
+                    loop ? "bg-blue-600 hover:bg-blue-500 text-white" : "bg-neutral-800 hover:bg-neutral-700 text-neutral-400"
+                )}
+                title={loop ? "Loop: ON" : "Loop: OFF"}
+            >
+                <Repeat className="w-5 h-5" />
+            </button>
+
+            {/* Clear Selection */}
+            {hasSelection && (
+                <button
+                    onClick={onClearSelection}
+                    className="w-10 h-10 rounded-full bg-neutral-800 hover:bg-red-900/50 text-neutral-400 hover:text-red-400 flex items-center justify-center transition-colors shrink-0"
+                    title="Clear Selection"
+                >
+                    <X className="w-5 h-5" />
+                </button>
+            )}
 
             {/* Speed */}
             <div className="flex flex-col gap-1 flex-1 sm:flex-none sm:min-w-[100px]">
