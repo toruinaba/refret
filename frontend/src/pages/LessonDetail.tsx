@@ -6,7 +6,7 @@ import { api } from "../lib/api"
 import type { LessonDetail as LessonDetailType } from "../types"
 import { TagInput } from "../components/ui/TagInput"
 import { MarkdownEditor } from "../components/ui/MarkdownEditor"
-import ReactMarkdown from 'react-markdown'
+import { MarkdownRenderer } from '../components/ui/MarkdownRenderer'
 
 export function LessonDetail() {
     const { id } = useParams<{ id: string }>()
@@ -24,7 +24,7 @@ export function LessonDetail() {
     const [isEditing, setIsEditing] = useState(false)
     const [editTags, setEditTags] = useState<string[]>([])
     const [editMemo, setEditMemo] = useState("")
-    const [isDirty, setIsDirty] = useState(false)
+
 
     // Form State (for new Lick)
     const [createTitle, setCreateTitle] = useState("")
@@ -38,7 +38,7 @@ export function LessonDetail() {
             setLesson(data as LessonDetailType)
             setEditTags(data.tags || [])
             setEditMemo(data.memo || "")
-            setIsDirty(false)
+
         }).catch(console.error)
     }, [id])
 
@@ -47,7 +47,7 @@ export function LessonDetail() {
         try {
             await api.updateLesson(id, { tags: editTags, memo: editMemo })
             setLesson(prev => prev ? ({ ...prev, tags: editTags, memo: editMemo }) : null)
-            setIsDirty(false)
+
             setIsEditing(false)
             alert("Metadata saved successfully!")
         } catch (e) {
@@ -245,13 +245,13 @@ export function LessonDetail() {
                                     {isEditing ? (
                                         <MarkdownEditor
                                             value={editMemo}
-                                            onChange={val => { setEditMemo(val); setIsDirty(true); }}
+                                            onChange={val => { setEditMemo(val); }}
                                             rows={8}
                                             placeholder="# Notes..."
                                         />
                                     ) : (
                                         <div className="prose prose-sm max-w-none text-neutral-600">
-                                            {lesson.memo ? <ReactMarkdown>{lesson.memo}</ReactMarkdown> : <p className="italic text-neutral-400">No memo available.</p>}
+                                            {lesson.memo ? <MarkdownRenderer>{lesson.memo}</MarkdownRenderer> : <p className="italic text-neutral-400">No memo available.</p>}
                                         </div>
                                     )}
                                 </div>
@@ -265,7 +265,7 @@ export function LessonDetail() {
                                     {isEditing ? (
                                         <TagInput
                                             value={editTags}
-                                            onChange={tags => { setEditTags(tags); setIsDirty(true); }}
+                                            onChange={tags => { setEditTags(tags); }}
                                             placeholder="Add tag..."
                                         />
                                     ) : (

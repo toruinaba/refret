@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { MarkdownRenderer } from './MarkdownRenderer';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -55,7 +55,7 @@ export function MarkdownEditor({ value, onChange, placeholder, className, rows =
                         className="prose prose-sm prose-orange max-w-none p-4 min-h-[150px] overflow-y-auto"
                         style={{ height: rows ? `${rows * 1.5}em` : 'auto' }}
                     >
-                        {value ? <ReactMarkdown>{value}</ReactMarkdown> : <p className="text-neutral-400 italic">Nothing to preview</p>}
+                        {value ? <MarkdownRenderer>{value}</MarkdownRenderer> : <p className="text-neutral-400 italic">Nothing to preview</p>}
                     </div>
                 )}
             </div>

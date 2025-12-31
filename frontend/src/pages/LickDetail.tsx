@@ -6,7 +6,7 @@ import { api } from "../lib/api"
 import { MultiTrackPlayer } from "../components/player/MultiTrackPlayer"
 import { TagInput } from "../components/ui/TagInput"
 import { MarkdownEditor } from "../components/ui/MarkdownEditor"
-import ReactMarkdown from 'react-markdown'
+import { MarkdownRenderer } from "../components/ui/MarkdownRenderer"
 
 export function LickDetail() {
     const { id } = useParams<{ id: string }>()
@@ -138,7 +138,7 @@ export function LickDetail() {
                             />
                         ) : (
                             <div className="prose prose-sm max-w-none text-neutral-600">
-                                {lick.memo ? <ReactMarkdown>{lick.memo}</ReactMarkdown> : <p className="italic text-neutral-400">No memo available.</p>}
+                                {lick.memo ? <MarkdownRenderer>{lick.memo}</MarkdownRenderer> : <p className="italic text-neutral-400">No memo available.</p>}
                             </div>
                         )}
                     </div>
