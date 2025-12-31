@@ -4,6 +4,9 @@ import { ArrowLeft, Plus, X, FileText, Tag, Calendar, PlayCircle, ChevronDown, C
 import { MultiTrackPlayer, type MultiTrackPlayerRef } from "../components/player/MultiTrackPlayer"
 import { api } from "../lib/api"
 import type { LessonDetail as LessonDetailType } from "../types"
+import { TagInput } from "../components/ui/TagInput"
+import { MarkdownEditor } from "../components/ui/MarkdownEditor"
+import ReactMarkdown from 'react-markdown'
 
 export function LessonDetail() {
     const { id } = useParams<{ id: string }>()
@@ -17,6 +20,12 @@ export function LessonDetail() {
     // UI State
     const [showTranscript, setShowTranscript] = useState(false)
 
+    // Metadata Edit State
+    const [isEditing, setIsEditing] = useState(false)
+    const [editTags, setEditTags] = useState<string[]>([])
+    const [editMemo, setEditMemo] = useState("")
+    const [isDirty, setIsDirty] = useState(false)
+
     // Form State (for new Lick)
     const [createTitle, setCreateTitle] = useState("")
     const [createTags, setCreateTags] = useState("")
@@ -25,8 +34,27 @@ export function LessonDetail() {
 
     useEffect(() => {
         if (!id) return;
-        api.getLesson(id).then((data) => setLesson(data as LessonDetailType)).catch(console.error)
+        api.getLesson(id).then((data) => {
+            setLesson(data as LessonDetailType)
+            setEditTags(data.tags || [])
+            setEditMemo(data.memo || "")
+            setIsDirty(false)
+        }).catch(console.error)
     }, [id])
+
+    const handleSaveMetadata = async () => {
+        if (!id) return
+        try {
+            await api.updateLesson(id, { tags: editTags, memo: editMemo })
+            setLesson(prev => prev ? ({ ...prev, tags: editTags, memo: editMemo }) : null)
+            setIsDirty(false)
+            setIsEditing(false)
+            alert("Metadata saved successfully!")
+        } catch (e) {
+            console.error(e)
+            alert("Failed to save metadata")
+        }
+    }
 
     const handleSeek = (ts: string) => {
         // Remove brackets if any, e.g. [01:23] -> 01:23
@@ -81,14 +109,34 @@ export function LessonDetail() {
                     </div>
                 </div>
 
-                {selection && !isCreating && (
-                    <button
-                        onClick={() => setIsCreating(true)}
-                        className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors animate-in fade-in"
-                    >
-                        <Plus className="w-4 h-4" /> Save Lick ({selection.start.toFixed(1)}s - {selection.end.toFixed(1)}s)
-                    </button>
-                )}
+                <div className="flex items-center gap-2">
+                    {selection && !isCreating && (
+                        <button
+                            onClick={() => setIsCreating(true)}
+                            className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors animate-in fade-in"
+                        >
+                            <Plus className="w-4 h-4" /> Save Lick ({selection.start.toFixed(1)}s - {selection.end.toFixed(1)}s)
+                        </button>
+                    )}
+
+                    {isEditing ? (
+                        <>
+                            <button onClick={() => setIsEditing(false)} className="px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-100 rounded-md">
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveMetadata}
+                                className="px-3 py-2 text-sm bg-neutral-900 text-white hover:bg-neutral-800 rounded-md shadow-sm"
+                            >
+                                Save Changes
+                            </button>
+                        </>
+                    ) : (
+                        <button onClick={() => setIsEditing(true)} className="px-3 py-2 text-sm border border-neutral-200 hover:bg-neutral-50 rounded-md text-neutral-700">
+                            Edit Details
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="max-w-4xl mx-auto space-y-8">
@@ -180,38 +228,64 @@ export function LessonDetail() {
                 )}
 
 
-                {/* Lesson Metadata (Legacy / Manual) */}
+                {/* Lesson Metadata (View/Edit) */}
                 {lesson && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8 border-t border-neutral-200">
-                        <div className="md:col-span-2 space-y-4">
-                            <div>
-                                <h4 className="text-xs font-semibold text-neutral-500 uppercase mb-2">Manual Memo</h4>
-                                <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-200 text-sm text-neutral-600 whitespace-pre-wrap">
-                                    {lesson.memo || "No memo available."}
-                                </div>
-                            </div>
+                    <div className="pt-8 border-t border-neutral-200 animate-in slide-in-from-bottom-8 duration-700">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-semibold text-lg flex items-center gap-2">
+                                <FileText className="w-5 h-5 text-orange-600" />
+                                Metadata & Notes
+                            </h3>
                         </div>
 
-                        <div className="space-y-4">
-                            <div>
-                                <h4 className="text-xs font-semibold text-neutral-500 uppercase flex items-center gap-2 mb-2">
-                                    <Tag className="w-3 h-3" /> Tags
-                                </h4>
-                                <div className="flex flex-wrap gap-2">
-                                    {lesson.tags && lesson.tags.length > 0 ? lesson.tags.map(tag => (
-                                        <span key={tag} className="px-2 py-1 bg-neutral-100 rounded text-xs text-neutral-700">
-                                            {tag}
-                                        </span>
-                                    )) : <span className="text-sm text-neutral-400">No tags</span>}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="md:col-span-2 space-y-4">
+                                <div>
+                                    <label className="text-xs font-semibold text-neutral-500 uppercase mb-2 block">Memo</label>
+                                    {isEditing ? (
+                                        <MarkdownEditor
+                                            value={editMemo}
+                                            onChange={val => { setEditMemo(val); setIsDirty(true); }}
+                                            rows={8}
+                                            placeholder="# Notes..."
+                                        />
+                                    ) : (
+                                        <div className="prose prose-sm max-w-none text-neutral-600">
+                                            {lesson.memo ? <ReactMarkdown>{lesson.memo}</ReactMarkdown> : <p className="italic text-neutral-400">No memo available.</p>}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
-                            <div>
-                                <h4 className="text-xs font-semibold text-neutral-500 uppercase flex items-center gap-2 mb-2">
-                                    <Calendar className="w-3 h-3" /> Created
-                                </h4>
-                                <p className="text-sm font-mono text-neutral-900">
-                                    {lesson.created_at || "Unknown"}
-                                </p>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-xs font-semibold text-neutral-500 uppercase flex items-center gap-2 mb-2">
+                                        <Tag className="w-3 h-3" /> Tags
+                                    </label>
+                                    {isEditing ? (
+                                        <TagInput
+                                            value={editTags}
+                                            onChange={tags => { setEditTags(tags); setIsDirty(true); }}
+                                            placeholder="Add tag..."
+                                        />
+                                    ) : (
+                                        <div className="flex flex-wrap gap-2">
+                                            {lesson.tags && lesson.tags.length > 0 ? lesson.tags.map(tag => (
+                                                <span key={tag} className="px-2 py-1 bg-neutral-100 rounded text-xs text-neutral-700">
+                                                    {tag}
+                                                </span>
+                                            )) : <span className="text-sm text-neutral-400">No tags</span>}
+                                        </div>
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="text-xs font-semibold text-neutral-500 uppercase flex items-center gap-2 mb-2">
+                                        <Calendar className="w-3 h-3" /> Created
+                                    </label>
+                                    <p className="text-sm font-mono text-neutral-900 bg-neutral-50 px-3 py-2 rounded-lg border border-neutral-200">
+                                        {lesson.created_at || "Unknown"}
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>

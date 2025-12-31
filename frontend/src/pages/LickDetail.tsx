@@ -4,6 +4,9 @@ import { ArrowLeft, Clock, Tag, FileText } from "lucide-react"
 import type { Lick } from "../types"
 import { api } from "../lib/api"
 import { MultiTrackPlayer } from "../components/player/MultiTrackPlayer"
+import { TagInput } from "../components/ui/TagInput"
+import { MarkdownEditor } from "../components/ui/MarkdownEditor"
+import ReactMarkdown from 'react-markdown'
 
 export function LickDetail() {
     const { id } = useParams<{ id: string }>()
@@ -11,10 +14,9 @@ export function LickDetail() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
 
-    // ... inside LickDetail component
     const [isEditing, setIsEditing] = useState(false)
     const [editTitle, setEditTitle] = useState("")
-    const [editTags, setEditTags] = useState("")
+    const [editTags, setEditTags] = useState<string[]>([])
     const [editMemo, setEditMemo] = useState("")
     const [saving, setSaving] = useState(false)
 
@@ -37,7 +39,7 @@ export function LickDetail() {
     const startEditing = () => {
         if (!lick) return
         setEditTitle(lick.title)
-        setEditTags(lick.tags.join(", "))
+        setEditTags(lick.tags || [])
         setEditMemo(lick.memo)
         setIsEditing(true)
     }
@@ -48,7 +50,7 @@ export function LickDetail() {
             setSaving(true)
             const updated = await api.updateLick(id, {
                 title: editTitle,
-                tags: editTags.split(",").map(t => t.trim()).filter(Boolean),
+                tags: editTags,
                 memo: editMemo
             })
             setLick(updated)
@@ -128,15 +130,15 @@ export function LickDetail() {
                             <FileText className="w-4 h-4" /> Memo
                         </h3>
                         {isEditing ? (
-                            <textarea
+                            <MarkdownEditor
                                 value={editMemo}
-                                onChange={e => setEditMemo(e.target.value)}
-                                className="w-full h-32 p-2 border border-neutral-300 rounded-md text-sm"
-                                placeholder="Write your practice notes here..."
+                                onChange={setEditMemo}
+                                rows={8}
+                                placeholder="# Lick Notes..."
                             />
                         ) : (
-                            <div className="prose prose-sm max-w-none text-neutral-600 whitespace-pre-wrap">
-                                {lick.memo || "No memo available."}
+                            <div className="prose prose-sm max-w-none text-neutral-600">
+                                {lick.memo ? <ReactMarkdown>{lick.memo}</ReactMarkdown> : <p className="italic text-neutral-400">No memo available.</p>}
                             </div>
                         )}
                     </div>
@@ -157,11 +159,10 @@ export function LickDetail() {
                                 <Tag className="w-3 h-3" /> Tags
                             </h4>
                             {isEditing ? (
-                                <input
+                                <TagInput
                                     value={editTags}
-                                    onChange={e => setEditTags(e.target.value)}
-                                    className="w-full p-2 border border-neutral-300 rounded-md text-sm"
-                                    placeholder="blues, lick, fast"
+                                    onChange={setEditTags}
+                                    placeholder="Add tag..."
                                 />
                             ) : (
                                 <div className="flex flex-wrap gap-2">

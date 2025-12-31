@@ -22,9 +22,14 @@ export const api = {
         return res.data;
     },
 
-    uploadLesson: async (file: File): Promise<{ id: string }> => {
+    uploadLesson: async (file: File, metadata?: { title?: string, created_at?: string, tags?: string[], memo?: string }): Promise<{ id: string }> => {
         const formData = new FormData();
         formData.append("file", file);
+        if (metadata?.title) formData.append("title", metadata.title);
+        if (metadata?.created_at) formData.append("created_at", metadata.created_at);
+        if (metadata?.tags) formData.append("tags", JSON.stringify(metadata.tags));
+        if (metadata?.memo) formData.append("memo", metadata.memo);
+
         const res = await client.post('/lessons/upload', formData, {
             headers: { "Content-Type": "multipart/form-data" }
         });

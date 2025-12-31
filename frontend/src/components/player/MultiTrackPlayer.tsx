@@ -10,13 +10,14 @@ interface MultiTrackPlayerProps {
     initialRegion?: { start: number, end: number };
     onSelectionChange?: (region: { start: number, end: number } | null) => void;
     className?: string;
+    autoPlay?: boolean;
 }
 
 export interface MultiTrackPlayerRef {
     seekTo: (time: number) => void;
 }
 
-export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayerProps>(({ lessonId, initialRegion, onSelectionChange, className }, ref) => {
+export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayerProps>(({ lessonId, initialRegion, onSelectionChange, className, autoPlay = false }, ref) => {
     // Container Refs
     const containerV = useRef<HTMLDivElement>(null)
     const containerG = useRef<HTMLDivElement>(null)
@@ -77,6 +78,9 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
             minPxPerSec: zoom,
             interact: false, // Slave track interacts via Master
         });
+        if (wsV.current.getMediaElement()) {
+            wsV.current.getMediaElement().autoplay = false;
+        }
 
         // 2. Create Guitar (Master)
         const regions = RegionsPlugin.create()
@@ -95,6 +99,9 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
             minPxPerSec: zoom,
             plugins: [regions]
         });
+        if (wsG.current.getMediaElement()) {
+            wsG.current.getMediaElement().autoplay = false;
+        }
 
 
         // Load Audio
@@ -129,6 +136,16 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
                 onSelectionChange?.(initialRegion);
                 wsG.current?.setTime(initialRegion.start);
                 wsV.current?.setTime(initialRegion.start);
+            }
+
+            if (autoPlay) {
+                wsG.current?.play();
+                wsV.current?.play();
+                setIsPlaying(true);
+            } else {
+                wsG.current?.pause();
+                wsV.current?.pause();
+                setIsPlaying(false);
             }
         });
 
@@ -170,6 +187,9 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
 
         // Manual Loop Sync (Ported from Streamlit app.py)
         regionsG.current.on('region-out', (region) => {
+            // Check if we are actually playing, otherwise this might be a seek/init event
+            if (!wsG.current?.isPlaying()) return;
+
             // Loop back
             const start = region.start;
             wsG.current?.setTime(start);

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, BackgroundTasks, Form
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
 from typing import List, Dict, Any
@@ -16,7 +16,7 @@ def get_store():
     return StoreService()
 
 # --- Background Processing Task ---
-def process_lesson_background(lesson_id: str, file_path: Path, store: StoreService):
+def process_lesson_background(lesson_id: str, file_path: Path, store: StoreService, initial_metadata: Dict[str, Any] = {}):
     status_file = store.data_dir / lesson_id / "status.json"
     
     def update_status(status: str, progress: float, message: str):
@@ -59,12 +59,18 @@ def process_lesson_background(lesson_id: str, file_path: Path, store: StoreServi
         # Save results to separate files (Legacy format)
         processor.save_results(store.data_dir / lesson_id, segments, transcript_text, summary_data)
         
-        metadata = {
-            "title": f"Lesson {lesson_id}",
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "tags": [],
-            "memo": ""
-        }
+        # Build metadata: Start with initial provided by user
+        metadata = initial_metadata.copy()
+        
+        # Fill defaults if missing
+        if "title" not in metadata or not metadata["title"]:
+            metadata["title"] = f"Lesson {lesson_id}"
+        if "created_at" not in metadata or not metadata["created_at"]:
+            metadata["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if "tags" not in metadata:
+            metadata["tags"] = []
+        if "memo" not in metadata:
+             metadata["memo"] = ""
         
         store.save_lesson_metadata(lesson_id, metadata)
         update_status("completed", 1.0, "Ready")
@@ -80,6 +86,10 @@ def process_lesson_background(lesson_id: str, file_path: Path, store: StoreServi
 async def upload_lesson(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    title: str = Form(None),
+    created_at: str = Form(None),
+    tags: str = Form(None), # Receive as JSON string
+    memo: str = Form(None),
     store: StoreService = Depends(get_store)
 ):
     """Upload a new lesson audio file for processing."""
@@ -88,6 +98,24 @@ async def upload_lesson(
     
     lesson_dir = store.data_dir / lesson_id
     lesson_dir.mkdir(exist_ok=True)
+    
+    # helper to parse tags
+    parsed_tags = []
+    if tags:
+        try:
+            parsed_tags = json.loads(tags)
+        except:
+            # Fallback for simple comma list
+            parsed_tags = [t.strip() for t in tags.split(",") if t.strip()]
+
+    initial_metadata = {
+        "title": title,
+        "created_at": created_at,
+        "tags": parsed_tags,
+        "memo": memo
+    }
+    # remove None keys
+    initial_metadata = {k: v for k, v in initial_metadata.items() if v is not None}
     
     # Save Uploaded File
     ext = Path(file.filename).suffix
@@ -103,7 +131,7 @@ async def upload_lesson(
         json.dump({"status": "queued", "progress": 0.0, "message": "In Queue"}, f)
 
     # Trigger Background Task
-    background_tasks.add_task(process_lesson_background, lesson_id, file_path, store)
+    background_tasks.add_task(process_lesson_background, lesson_id, file_path, store, initial_metadata)
     
     return {"id": lesson_id, "message": "Upload successful, processing started."}
 
