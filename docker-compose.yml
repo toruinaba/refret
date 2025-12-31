@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: refret-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist data (lessons, licks, settings)
+      - ./data:/app/data
+      # Hot reload code in dev (optional, remove for prod)
+      - ./backend/app:/app/app
+    env_file:
+      - .env
+    environment:
+      # Ensure python doesn't buffer output
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: refret-frontend
+    ports:
+      - "5173:80" # Map host 5173 to container 80 (nginx)
+    depends_on:
+      - backend
+    restart: unless-stopped
