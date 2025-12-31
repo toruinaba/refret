@@ -155,10 +155,34 @@ async def get_lesson_status(lesson_id: str, store: StoreService = Depends(get_st
         except:
              return {"status": "unknown", "progress": 0.0, "message": "Read error"}
 
-@router.get("/", response_model=List[Dict[str, Any]])
-async def list_lessons(store: StoreService = Depends(get_store)):
-    """List all available lessons."""
-    return store.list_lessons()
+@router.get("/", response_model=Dict[str, Any])
+async def list_lessons(
+    page: int = 1,
+    limit: int = 50,
+    tags: str = None,
+    date_from: str = None,
+    date_to: str = None,
+    store: StoreService = Depends(get_store)
+):
+    """List lessons with filtering and pagination."""
+    tag_list = None
+    if tags:
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+        
+    items, total = store.list_lessons(
+        page=page, 
+        limit=limit, 
+        tags=tag_list, 
+        date_from=date_from, 
+        date_to=date_to
+    )
+    
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit
+    }
 
 @router.get("/{lesson_id}", response_model=Dict[str, Any])
 async def get_lesson(lesson_id: str, store: StoreService = Depends(get_store)):

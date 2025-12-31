@@ -25,10 +25,36 @@ class LickUpdate(BaseModel):
     start: Optional[float] = None
     end: Optional[float] = None
 
-@router.get("/", response_model=List[Dict[str, Any]])
-async def list_licks(store: StoreService = Depends(get_store)):
-    """List all saved licks."""
-    return store.load_licks()
+@router.get("/", response_model=Dict[str, Any])
+async def list_licks(
+    page: int = 1,
+    limit: int = 50,
+    tags: str = None,
+    lesson_id: str = None,
+    date_from: str = None,
+    date_to: str = None,
+    store: StoreService = Depends(get_store)
+):
+    """List licks with filtering and pagination."""
+    tag_list = None
+    if tags:
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    items, total = store.list_licks(
+        page=page,
+        limit=limit,
+        tags=tag_list,
+        date_from=date_from,
+        date_to=date_to,
+        lesson_id=lesson_id
+    )
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit
+    }
 
 @router.post("/", response_model=Dict[str, Any])
 async def create_lick(lick: LickCreate, store: StoreService = Depends(get_store)):

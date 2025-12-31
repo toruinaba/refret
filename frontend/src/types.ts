@@ -23,3 +23,10 @@ export interface Lick {
     memo: string;
     created_at: string;
 }
+
+export interface PaginatedResponse<T> {
+    items: T[];
+    total: number;
+    page: number;
+    limit: number;
+}

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Lesson, LessonDetail, Lick } from '../types';
+import type { Lesson, LessonDetail, Lick, PaginatedResponse } from '../types';
 
 const API_BASE_URL = 'http://localhost:8000/api';
 
@@ -12,8 +12,12 @@ const client = axios.create({
 
 export const api = {
     // Lessons
-    getLessons: async (): Promise<Lesson[]> => {
-        const res = await client.get('/lessons');
+    getLessons: async (params?: { page?: number, limit?: number, tags?: string[], date_from?: string, date_to?: string }): Promise<PaginatedResponse<Lesson>> => {
+        const query: any = { ...params };
+        if (params?.tags) {
+            query.tags = params.tags.join(",");
+        }
+        const res = await client.get('/lessons', { params: query });
         return res.data;
     },
 
@@ -47,8 +51,12 @@ export const api = {
     },
 
     // Licks
-    getLicks: async (): Promise<Lick[]> => {
-        const res = await client.get('/licks');
+    getLicks: async (params?: { page?: number, limit?: number, tags?: string[], lesson_id?: string, date_from?: string, date_to?: string }): Promise<PaginatedResponse<Lick>> => {
+        const query: any = { ...params };
+        if (params?.tags) {
+            query.tags = params.tags.join(",");
+        }
+        const res = await client.get('/licks', { params: query });
         return res.data;
     },
 
@@ -96,6 +104,12 @@ export const api = {
 
     saveSettings: async (settings: any): Promise<any> => {
         const res = await client.post("/settings", settings);
+        return res.data;
+    },
+
+    // Tags
+    getTags: async (): Promise<string[]> => {
+        const res = await client.get('/tags');
         return res.data;
     },
 

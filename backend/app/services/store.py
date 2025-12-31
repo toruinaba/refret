@@ -3,7 +3,7 @@ import uuid
 import shutil
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 from app.core.config import get_settings
 
@@ -16,25 +16,52 @@ class StoreService:
         self.tags_file = self.data_dir / "tags.json"
 
     # --- Lessons ---
-    def list_lessons(self) -> List[Dict[str, Any]]:
-        lessons = []
+    def list_lessons(
+        self, 
+        page: int = 1, 
+        limit: int = 1000, 
+        tags: List[str] = None, 
+        date_from: str = None, 
+        date_to: str = None
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        
+        all_lessons = []
         if not self.data_dir.exists():
-            return []
+            return [], 0
             
         for d in self.data_dir.iterdir():
             if d.is_dir():
                 meta = self.get_lesson_metadata(d.name)
-                lessons.append({
+                
+                # Filter by Tags (AND logic)
+                if tags:
+                    lesson_tags = set(meta.get("tags", []))
+                    if not set(tags).issubset(lesson_tags):
+                        continue
+                
+                # Filter by Date
+                created_at = meta.get("created_at", "")
+                if date_from and created_at < date_from:
+                    continue
+                if date_to and created_at > date_to:
+                    continue
+
+                all_lessons.append({
                     "id": d.name,
                     "title": d.name, # Currently folder name is ID and title
-                    "created_at": meta.get("created_at"),
+                    "created_at": created_at,
                     "tags": meta.get("tags", []),
                     "memo": meta.get("memo", "")
                 })
         
         # Sort by Date descending
-        lessons.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-        return lessons
+        all_lessons.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        
+        total = len(all_lessons)
+        start = (page - 1) * limit
+        end = start + limit
+        
+        return all_lessons[start:end], total
 
     def get_lesson_metadata(self, lesson_id: str) -> Dict[str, Any]:
         folder = self.data_dir / lesson_id
@@ -113,6 +140,45 @@ class StoreService:
                 return json.load(f)
         except:
             return []
+
+    def list_licks(
+        self,
+        page: int = 1,
+        limit: int = 50,
+        tags: List[str] = None,
+        date_from: str = None,
+        date_to: str = None,
+        lesson_id: str = None
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        
+        all_licks = self.load_licks()
+        filtered = []
+        
+        for lick in all_licks:
+            # Filter by Lesson ID
+            if lesson_id and lick.get("lesson_dir") != lesson_id:
+                continue
+                
+            # Filter by Tags (AND logic)
+            if tags:
+                lick_tags = set(lick.get("tags", []))
+                if not set(tags).issubset(lick_tags):
+                    continue
+            
+            # Filter by Date
+            created_at = lick.get("created_at", "")
+            if date_from and created_at < date_from:
+                continue
+            if date_to and created_at > date_to:
+                continue
+                
+            filtered.append(lick)
+            
+        total = len(filtered)
+        start = (page - 1) * limit
+        end = start + limit
+        
+        return filtered[start:end], total
 
     def save_lick(self, lick_data: Dict[str, Any]):
         licks = self.load_licks()
