@@ -48,7 +48,7 @@ class StoreService:
 
                 all_lessons.append({
                     "id": d.name,
-                    "title": d.name, # Currently folder name is ID and title
+                    "title": meta.get("title", d.name),
                     "created_at": created_at,
                     "tags": meta.get("tags", []),
                     "memo": meta.get("memo", "")
