@@ -1,5 +1,5 @@
 import type { HTMLAttributes } from "react"
-import { Play, Pause, ZoomIn, Repeat, X } from "lucide-react"
+import { Play, Pause, ZoomIn, Repeat, X, SkipBack, SkipForward } from "lucide-react"
 import { cn } from "../../lib/utils"
 
 interface TransportControlsProps extends HTMLAttributes<HTMLDivElement> {
@@ -19,6 +19,8 @@ interface TransportControlsProps extends HTMLAttributes<HTMLDivElement> {
     onLoopChange: (loop: boolean) => void;
     hasSelection: boolean;
     onClearSelection: () => void;
+    onSkipStart: () => void;
+    onSkipEnd: () => void;
 }
 
 export function TransportControls({
@@ -39,6 +41,8 @@ export function TransportControls({
     onLoopChange,
     hasSelection,
     onClearSelection,
+    onSkipStart,
+    onSkipEnd,
     ...props
 }: TransportControlsProps) {
 
@@ -50,12 +54,28 @@ export function TransportControls({
 
     return (
         <div className={cn("bg-neutral-900 text-white p-3 rounded-lg flex items-center flex-wrap gap-3 sm:gap-4", className)} {...props}>
+            {/* Skip Start */}
+            <button
+                onClick={onSkipStart}
+                className="w-8 h-8 rounded-full bg-neutral-800 hover:bg-neutral-700 flex items-center justify-center transition-colors text-neutral-400 hover:text-white shrink-0"
+            >
+                <SkipBack className="w-4 h-4 fill-current" />
+            </button>
+
             {/* Play Toggle */}
             <button
                 onClick={onPlayPause}
                 className="w-10 h-10 rounded-full bg-orange-600 hover:bg-orange-500 flex items-center justify-center transition-colors shrink-0"
             >
                 {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
+            </button>
+
+            {/* Skip End */}
+            <button
+                onClick={onSkipEnd}
+                className="w-8 h-8 rounded-full bg-neutral-800 hover:bg-neutral-700 flex items-center justify-center transition-colors text-neutral-400 hover:text-white shrink-0"
+            >
+                <SkipForward className="w-4 h-4 fill-current" />
             </button>
 
             {/* Loop Toggle */}

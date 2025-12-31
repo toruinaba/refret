@@ -272,6 +272,18 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
         onSelectionChange?.(null);
     }, [onSelectionChange]);
 
+    const handleSkipStart = useCallback(() => {
+        const time = selection ? selection.start : 0;
+        wsG.current?.setTime(time);
+        wsV.current?.setTime(time);
+    }, [selection]);
+
+    const handleSkipEnd = useCallback(() => {
+        const time = selection ? selection.end : (wsG.current?.getDuration() || 0);
+        wsG.current?.setTime(time);
+        wsV.current?.setTime(time);
+    }, [selection]);
+
 
     return (
         <div className={cn("bg-white rounded-xl border border-neutral-200 shadow-sm p-4", className)}>
@@ -293,6 +305,8 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
                 onLoopChange={setLoop}
                 hasSelection={!!selection}
                 onClearSelection={handleClearSelection}
+                onSkipStart={handleSkipStart}
+                onSkipEnd={handleSkipEnd}
             />
 
             {/* Waveforms */}
