@@ -9,11 +9,11 @@ import { Settings } from './pages/Settings'
 
 function App() {
   return (
-    <div className="min-h-screen bg-neutral-50 p-8">
+    <div className="min-h-screen bg-neutral-50 p-4 sm:p-6 md:p-8">
       <div className="max-w-6xl mx-auto">
 
         {/* Navigation Header */}
-        <div className="flex items-center justify-between border-b border-neutral-200 pb-6 mb-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-neutral-200 pb-6 mb-8 gap-6 md:gap-4">
           <Link to="/" className="flex items-center gap-4 group">
             <div className="p-3 bg-orange-100 rounded-lg group-hover:bg-orange-200 transition-colors">
               <Guitar className="w-8 h-8 text-orange-600" />
@@ -26,12 +26,12 @@ function App() {
             </div>
           </Link>
 
-          <div className="flex gap-4">
-            <Link to="/upload" className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-600 text-white font-medium hover:bg-orange-700 transition-colors">
+          <div className="flex flex-wrap gap-2 sm:gap-4">
+            <Link to="/upload" className="flex items-center gap-2 px-3 py-2 sm:px-4 text-sm sm:text-base rounded-lg bg-orange-600 text-white font-medium hover:bg-orange-700 transition-colors">
               <UploadIcon className="w-4 h-4" />
               Upload
             </Link>
-            <Link to="/licks" className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-medium transition-colors">
+            <Link to="/licks" className="flex items-center gap-2 px-3 py-2 sm:px-4 text-sm sm:text-base rounded-lg bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-medium transition-colors">
               <Music className="w-4 h-4" />
               Lick Library
             </Link>
