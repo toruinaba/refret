@@ -92,7 +92,8 @@ class StoreService:
             
         # Update global tags
         if "tags" in metadata:
-            self.add_global_tags(metadata["tags"])
+            for t in metadata["tags"]:
+                self.db.add_tag(t)
 
     def create_lesson_folder(self, title: str) -> Path:
         # Sanitize title for folder name
@@ -118,15 +119,7 @@ class StoreService:
             shutil.rmtree(path)
 
     # --- Licks ---
-    def load_licks(self) -> List[Dict[str, Any]]:
-        if not self.licks_file.exists():
-            return []
-        try:
-            with open(self.licks_file, "r") as f:
-                return json.load(f)
-        except:
-            return []
-
+    # --- Licks ---
     def list_licks(
         self,
         page: int = 1,
@@ -136,111 +129,44 @@ class StoreService:
         date_to: str = None,
         lesson_id: str = None
     ) -> Tuple[List[Dict[str, Any]], int]:
-        
-        all_licks = self.load_licks()
-        filtered = []
-        
-        for lick in all_licks:
-            # Filter by Lesson ID
-            if lesson_id and lick.get("lesson_dir") != lesson_id:
-                continue
-                
-            # Filter by Tags (AND logic)
-            if tags:
-                lick_tags = set(lick.get("tags", []))
-                if not set(tags).issubset(lick_tags):
-                    continue
-            
-            # Filter by Date
-            created_at = lick.get("created_at", "")
-            if date_from and created_at < date_from:
-                continue
-            if date_to and created_at > date_to:
-                continue
-                
-            filtered.append(lick)
-            
-        total = len(filtered)
-        start = (page - 1) * limit
-        end = start + limit
-        
-        return filtered[start:end], total
+        return self.db.list_licks(page, limit, tags, lesson_id, date_from, date_to)
 
     def save_lick(self, lick_data: Dict[str, Any]):
-        licks = self.load_licks()
-        
         # Ensure ID and timestamps
         if "id" not in lick_data:
             lick_data["id"] = str(uuid.uuid4())
         if "created_at" not in lick_data:
             lick_data["created_at"] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
-        licks.append(lick_data)
-        licks.sort(key=lambda x: x["created_at"], reverse=True)
+        self.db.create_lick(lick_data)
         
-        with open(self.licks_file, "w") as f:
-            json.dump(licks, f, indent=4)
+        # Update tags
+        for t in lick_data.get("tags", []):
+            self.db.add_tag(t)
             
         return lick_data
         
     def update_lick(self, lick_id: str, updates: Dict[str, Any]):
-        licks = self.load_licks()
-        updated = False
-        for lick in licks:
-            if lick["id"] == lick_id:
-                lick.update(updates)
-                updated = True
-                break
-        
-        if updated:
-            with open(self.licks_file, "w") as f:
-                json.dump(licks, f, indent=4)
-        return updated
+        self.db.update_lick(lick_id, updates)
+        # return updated lick? 
+        return self.db.get_lick(lick_id)
 
     def delete_lick(self, lick_id: str):
-        licks = self.load_licks()
-        licks = [l for l in licks if l["id"] != lick_id]
-        with open(self.licks_file, "w") as f:
-            json.dump(licks, f, indent=4)
+        self.db.delete_lick(lick_id)
+
+    def get_lick(self, lick_id: str):
+        return self.db.get_lick(lick_id)
 
     # --- Tags ---
-    def load_global_tags(self):
-        if self.tags_file.exists():
-            try:
-                with open(self.tags_file, "r") as f:
-                    return set(json.load(f))
-            except:
-                pass
-        return set()
-
-    def add_global_tags(self, tags: List[str]):
-        current = self.load_global_tags()
-        current.update(tags)
-        with open(self.tags_file, "w") as f:
-            json.dump(list(current), f, indent=4)
-            
     def get_all_tags(self) -> List[str]:
-        # Combine global tags + tags found in lessons
-        tags = self.load_global_tags()
-        lessons, _ = self.list_lessons()
-        for lesson in lessons:
-            for t in lesson.get("tags", []):
-                tags.add(t)
-        return sorted(list(tags))
+        return self.db.get_tags()
 
+    # --- Settings ---
     def get_settings_override(self) -> Dict[str, Any]:
-        """Load settings from data/settings.json."""
-        path = self.data_dir / "settings.json"
-        if path.exists():
-            try:
-                with open(path, "r") as f:
-                    return json.load(f)
-            except:
-                 pass
-        return {}
+        """Load settings from DB."""
+        return self.db.get_all_settings()
 
     def save_settings_override(self, settings: Dict[str, Any]):
-        """Save settings to data/settings.json."""
-        path = self.data_dir / "settings.json"
-        with open(path, "w") as f:
-            json.dump(settings, f, indent=2)
+        """Save settings to DB."""
+        for k, v in settings.items():
+            self.db.save_setting(k, v)

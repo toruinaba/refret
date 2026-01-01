@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
+import math
 
 from app.services.store import StoreService
 
@@ -55,7 +56,8 @@ async def list_licks(
         "items": items,
         "total": total,
         "page": page,
-        "limit": limit
+        "limit": limit,
+        "pages": math.ceil(total / limit) if limit > 0 else 1
     }
 
 @router.post("/", response_model=Dict[str, Any])
@@ -63,6 +65,11 @@ async def create_lick(lick: LickCreate, store: StoreService = Depends(get_store)
     """Create a new lick."""
     # Convert Pydantic model to dict
     data = lick.model_dump()
+    
+    # fix legacy key: Frontend sends 'lesson_dir' but DB expects 'lesson_id'
+    if "lesson_dir" in data:
+        data["lesson_id"] = data.pop("lesson_dir")
+        
     # Save (store service handles ID generation)
     saved = store.save_lick(data)
     return saved
@@ -77,17 +84,13 @@ async def update_lick(lick_id: str, updates: LickUpdate, store: StoreService = D
          raise HTTPException(status_code=400, detail="No updates provided")
 
     success = store.update_lick(lick_id, update_data)
-    if not success:
-        raise HTTPException(status_code=404, detail="Lick not found")
-        
-    # In a real DB we'd fetch the updated obj, here we just return success or load all
-    # Let's find and return the updated lick
-    licks = store.load_licks()
-    for l in licks:
-        if l["id"] == lick_id:
-            return l
+    # Store.update_lick returns the updated object or None (if I changed logic)
+    # Actually current StoreService.update_lick returns the object.
     
-    raise HTTPException(status_code=404, detail="Lick not found after update")
+    if not success:
+        raise HTTPException(status_code=404, detail="Lick not found or update failed")
+        
+    return success
 
 @router.delete("/{lick_id}")
 async def delete_lick(lick_id: str, store: StoreService = Depends(get_store)):
@@ -98,9 +101,8 @@ async def delete_lick(lick_id: str, store: StoreService = Depends(get_store)):
 @router.get("/{lick_id}", response_model=Dict[str, Any])
 async def get_lick(lick_id: str, store: StoreService = Depends(get_store)):
     """Get a specific lick."""
-    licks = store.load_licks()
-    for l in licks:
-        if l["id"] == lick_id:
-            return l
-    raise HTTPException(status_code=404, detail="Lick not found")
+    lick = store.get_lick(lick_id)
+    if not lick:
+        raise HTTPException(status_code=404, detail="Lick not found")
+    return lick
 
