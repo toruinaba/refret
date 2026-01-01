@@ -236,7 +236,8 @@ class StoreService:
     def get_all_tags(self) -> List[str]:
         # Combine global tags + tags found in lessons
         tags = self.load_global_tags()
-        for lesson in self.list_lessons():
+        lessons, _ = self.list_lessons()
+        for lesson in lessons:
             for t in lesson.get("tags", []):
                 tags.add(t)
         return sorted(list(tags))

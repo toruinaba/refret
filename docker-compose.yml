@@ -18,6 +18,7 @@ services:
     environment:
       # Ensure python doesn't buffer output
       - PYTHONUNBUFFERED=1
+      - DATA_DIR=/app/data
     restart: unless-stopped
 
   frontend:
