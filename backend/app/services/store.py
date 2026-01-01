@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Tuple
 
 from app.core.config import get_settings
+from app.services.database import DatabaseService
 
 class StoreService:
     def __init__(self):
@@ -14,6 +15,7 @@ class StoreService:
         self.data_dir.mkdir(exist_ok=True)
         self.licks_file = self.data_dir / "licks.json"
         self.tags_file = self.data_dir / "tags.json"
+        self.db = DatabaseService()
 
     # --- Lessons ---
     def list_lessons(
@@ -25,88 +27,68 @@ class StoreService:
         date_to: str = None
     ) -> Tuple[List[Dict[str, Any]], int]:
         
-        all_lessons = []
-        if not self.data_dir.exists():
-            return [], 0
-            
-        for d in self.data_dir.iterdir():
-            if d.is_dir():
-                meta = self.get_lesson_metadata(d.name)
-                
-                # Filter by Tags (AND logic)
-                if tags:
-                    lesson_tags = set(meta.get("tags", []))
-                    if not set(tags).issubset(lesson_tags):
-                        continue
-                
-                # Filter by Date
-                created_at = meta.get("created_at", "")
-                if date_from and created_at < date_from:
-                    continue
-                if date_to and created_at > date_to:
-                    continue
-
-                all_lessons.append({
-                    "id": d.name,
-                    "title": meta.get("title", d.name),
-                    "created_at": created_at,
-                    "tags": meta.get("tags", []),
-                    "memo": meta.get("memo", "")
-                })
-        
-        # Sort by Date descending
-        all_lessons.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-        
-        total = len(all_lessons)
-        start = (page - 1) * limit
-        end = start + limit
-        
-        return all_lessons[start:end], total
+        # Use DB
+        return self.db.list_lessons(page, limit, tags, date_from, date_to)
 
     def get_lesson_metadata(self, lesson_id: str) -> Dict[str, Any]:
+        # Get from DB first
+        db_meta = self.db.get_lesson(lesson_id)
+        if not db_meta:
+            return {}
+            
         folder = self.data_dir / lesson_id
-        meta_path = folder / "metadata.json"
         
-        # Base metadata
-        data = {"tags": [], "memo": "", "created_at": ""}
-        if meta_path.exists():
-            try:
-                with open(meta_path, "r") as f:
-                    data.update(json.load(f))
-            except:
-                pass
-        else:
-             # Try to infer creation time from folder if metadata missing
-             if folder.exists():
-                ctime = datetime.fromtimestamp(folder.stat().st_ctime).strftime('%Y-%m-%d')
-                data["created_at"] = ctime
-
-        # Load Transcript
+        # Load Content Files if path is present, or fallback to default locations
+        transcript = ""
+        summary_data = {}
+        
+        # Transcript
         transcript_path = folder / "transcript.txt"
         if transcript_path.exists():
-            with open(transcript_path, "r") as f:
-                data["transcript"] = f.read()
-        
-        # Load Summary
+            try:
+                with open(transcript_path, "r") as f:
+                    transcript = f.read()
+            except:
+                pass
+                
+        # Summary
         summary_path = folder / "summary.json"
         if summary_path.exists():
              try:
                  with open(summary_path, "r") as f:
                      summary_data = json.load(f)
-                     data["summary"] = summary_data.get("summary", "")
-                     data["key_points"] = summary_data.get("key_points", [])
-                     data["chords"] = summary_data.get("chords", [])
              except:
                  pass
-                 
-        return data
+
+        # Merge
+        result = db_meta.copy()
+        result["transcript"] = transcript
+        if summary_data:
+             result["summary"] = summary_data.get("summary", "")
+             result["key_points"] = summary_data.get("key_points", [])
+             result["chords"] = summary_data.get("chords", [])
+             
+        return result
 
     def save_lesson_metadata(self, lesson_id: str, metadata: Dict[str, Any]):
-        folder = self.data_dir / lesson_id
-        folder.mkdir(parents=True, exist_ok=True)
-        
-        with open(folder / "metadata.json", "w") as f:
-            json.dump(metadata, f, indent=4)
+        # Update DB. If not exists, create? 
+        # Usually save_lesson_metadata called after create or update.
+        # Check if exists
+        existing = self.db.get_lesson(lesson_id)
+        if existing:
+            self.db.update_lesson(lesson_id, metadata)
+        else:
+            # Creation scenario
+            record = metadata.copy()
+            record["id"] = lesson_id
+            if "folder_path" not in record:
+                record["folder_path"] = lesson_id # Relative
+            
+            # Ensure paths if generic
+            if not record.get("vocals_path") and (self.data_dir / lesson_id / "vocals.mp3").exists():
+                 record["vocals_path"] = f"{lesson_id}/vocals.mp3"
+            
+            self.db.create_lesson(record)
             
         # Update global tags
         if "tags" in metadata:
@@ -127,6 +109,10 @@ class StoreService:
         return path
 
     def delete_lesson(self, lesson_id: str):
+        # Delete from DB
+        self.db.delete_lesson(lesson_id)
+        
+        # Delete files
         path = self.data_dir / lesson_id
         if path.exists():
             shutil.rmtree(path)

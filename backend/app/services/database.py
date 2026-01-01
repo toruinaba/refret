@@ -3,7 +3,7 @@ import json
 import os
 from datetime import datetime, date
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 
 from app.core.config import get_settings
 
@@ -32,6 +32,27 @@ class DatabaseService:
             """)
             # Index on date for faster range queries
             conn.execute("CREATE INDEX IF NOT EXISTS idx_logs_date ON practice_logs (date)")
+
+            # Lessons Table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS lessons (
+                    id TEXT PRIMARY KEY,
+                    title TEXT,
+                    duration INTEGER DEFAULT 0,
+                    date TEXT,
+                    status TEXT DEFAULT 'completed',
+                    folder_path TEXT,
+                    original_path TEXT,
+                    vocals_path TEXT,
+                    guitar_path TEXT,
+                    transcript_path TEXT,
+                    summary_path TEXT,
+                    tags TEXT,
+                    memo TEXT,
+                    created_at TEXT
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_lessons_date ON lessons (date)")
             conn.commit()
 
     def get_logs(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -169,3 +190,120 @@ class DatabaseService:
             "total_minutes": total_duration,
             "week_minutes": week_duration
         }
+
+    # --- Lessons ---
+    def create_lesson(self, data: Dict[str, Any]):
+        tags_json = json.dumps(data.get("tags", []))
+        
+        with self.get_connection() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO lessons (
+                    id, title, duration, date, status, folder_path,
+                    original_path, vocals_path, guitar_path, transcript_path, summary_path,
+                    tags, memo, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                data["id"],
+                data.get("title"),
+                data.get("duration", 0),
+                data.get("date"),
+                data.get("status", "completed"),
+                data.get("folder_path"),
+                data.get("original_path"),
+                data.get("vocals_path"),
+                data.get("guitar_path"),
+                data.get("transcript_path"),
+                data.get("summary_path"),
+                tags_json,
+                data.get("memo", ""),
+                data.get("created_at")
+            ))
+            conn.commit()
+
+    def get_lesson(self, lesson_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM lessons WHERE id = ?", (lesson_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["tags"] = json.loads(d["tags"]) if d["tags"] else []
+            return d
+
+    def list_lessons(
+        self, 
+        page: int = 1, 
+        limit: int = 50, 
+        tags: List[str] = None, 
+        date_from: str = None, 
+        date_to: str = None
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        
+        query = "SELECT * FROM lessons"
+        params = []
+        conditions = []
+        
+        if tags:
+            for tag in tags:
+                conditions.append(f"tags LIKE ?")
+                params.append(f'%"{tag}"%')
+
+        if date_from:
+            conditions.append("created_at >= ?")
+            params.append(date_from)
+        if date_to:
+            conditions.append("created_at <= ?")
+            params.append(date_to)
+            
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+            
+        query += " ORDER BY created_at DESC"
+        
+        # Count total first
+        with self.get_connection() as conn:
+            cursor = conn.execute(f"SELECT COUNT(*) FROM ({query})", params)
+            total = cursor.fetchone()[0]
+            
+            # Paging
+            query += " LIMIT ? OFFSET ?"
+            params.extend([limit, (page - 1) * limit])
+            
+            cursor = conn.execute(query, params)
+            rows = cursor.fetchall()
+            
+        results = []
+        for row in rows:
+            d = dict(row)
+            d["tags"] = json.loads(d["tags"]) if d["tags"] else []
+            results.append(d)
+            
+        return results, total
+
+    def update_lesson(self, lesson_id: str, data: Dict[str, Any]):
+        fields = []
+        params = []
+        
+        for k in ["title", "duration", "date", "status", "memo", "created_at", "folder_path", "vocals_path", "guitar_path", "transcript_path", "summary_path", "original_path"]:
+            if k in data:
+                fields.append(f"{k} = ?")
+                params.append(data[k])
+                
+        if "tags" in data:
+            fields.append("tags = ?")
+            params.append(json.dumps(data["tags"]))
+            
+        if not fields:
+            return
+            
+        params.append(lesson_id)
+        query = f"UPDATE lessons SET {', '.join(fields)} WHERE id = ?"
+        
+        with self.get_connection() as conn:
+            conn.execute(query, params)
+            conn.commit()
+
+    def delete_lesson(self, lesson_id: str):
+        with self.get_connection() as conn:
+            conn.execute("DELETE FROM lessons WHERE id = ?", (lesson_id,))
+            conn.commit()

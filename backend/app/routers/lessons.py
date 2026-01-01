@@ -6,6 +6,7 @@ import shutil
 import json
 import traceback
 from datetime import datetime
+import math
 
 from app.services.store import StoreService
 from app.core.config import get_settings
@@ -20,6 +21,7 @@ def process_lesson_background(lesson_id: str, file_path: Path, store: StoreServi
     status_file = store.data_dir / lesson_id / "status.json"
     
     def update_status(status: str, progress: float, message: str):
+        # Update File (Legacy/Frontend polling)
         with open(status_file, "w") as f:
             json.dump({
                 "status": status,
@@ -27,6 +29,8 @@ def process_lesson_background(lesson_id: str, file_path: Path, store: StoreServi
                 "message": message,
                 "updated_at": datetime.now().isoformat()
             }, f)
+        # Update DB
+        store.save_lesson_metadata(lesson_id, {"status": status})
 
     try:
         from app.services.audio import AudioProcessor
@@ -126,9 +130,13 @@ async def upload_lesson(
         shutil.copyfileobj(file.file, buffer)
         
     # Init Status
+    # Init Status
     status_file = lesson_dir / "status.json"
     with open(status_file, "w") as f:
         json.dump({"status": "queued", "progress": 0.0, "message": "In Queue"}, f)
+
+    # Create Initial DB Record
+    store.save_lesson_metadata(lesson_id, {**initial_metadata, "status": "queued"})
 
     # Trigger Background Task
     background_tasks.add_task(process_lesson_background, lesson_id, file_path, store, initial_metadata)
@@ -138,13 +146,27 @@ async def upload_lesson(
 @router.get("/{lesson_id}/status")
 async def get_lesson_status(lesson_id: str, store: StoreService = Depends(get_store)):
     """Check processing status of a lesson."""
+    # Check DB first
+    meta = store.get_lesson_metadata(lesson_id)
+    if meta and "status" in meta:
+         # Combine with file-based progress if available (DB doesn't store progress float)
+         status_file = store.data_dir / lesson_id / "status.json"
+         progress = 0.0
+         message = meta["status"]
+         if status_file.exists():
+             try:
+                 with open(status_file, "r") as f:
+                     sf = json.load(f)
+                     progress = sf.get("progress", 0.0)
+                     message = sf.get("message", message)
+             except:
+                 pass
+         return {"status": meta["status"], "progress": progress, "message": message}
+
+    # Fallback to file only
     status_file = store.data_dir / lesson_id / "status.json"
     
     if not status_file.exists():
-        # Fallback: If metadata exists, it's completed
-        if (store.data_dir / lesson_id / "metadata.json").exists():
-            return {"status": "completed", "progress": 1.0, "message": "Ready"}
-        # If folder exists but no status/metadata?
         if (store.data_dir / lesson_id).exists():
              return {"status": "unknown", "progress": 0.0, "message": "No status info"}
         raise HTTPException(status_code=404, detail="Lesson not found")
@@ -181,7 +203,8 @@ async def list_lessons(
         "items": items,
         "total": total,
         "page": page,
-        "limit": limit
+        "limit": limit,
+        "pages": math.ceil(total / limit) if limit > 0 else 1
     }
 
 @router.get("/{lesson_id}", response_model=Dict[str, Any])
@@ -272,6 +295,8 @@ def reprocess_lesson_step(lesson_id: str, task_type: str, store: StoreService):
                 "message": message,
                 "updated_at": datetime.now().isoformat()
             }, f)
+        # Update DB
+        store.save_lesson_metadata(lesson_id, {"status": status})
 
     try:
         from app.services.audio import AudioProcessor
