@@ -1,29 +1,27 @@
 import os
 import logging
-from app.core.config import PROJECT_ROOT
+import tempfile
+import numpy as np
+import soundfile as sf
+import librosa
+import music21
+from music21 import abcFormat
+from basic_pitch.inference import predict
+
+from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 class TranscriptionService:
     def get_lesson_dir(self, lesson_id: str) -> str:
-        return os.path.join(PROJECT_ROOT, "data", "lessons", lesson_id)
+        settings = get_settings()
+        return os.path.join(settings.DATA_DIR, lesson_id)
 
     def transcribe_segment(self, lesson_id: str, start: float, end: float) -> str:
         """
         Transcribe a segment of the guitar track to ABC notation.
-        
-        NOTE: Due to Python 3.13 incompatibility with basic-pitch/tensorflow/librosa,
-        this service currently runs in MOCK MODE unless libraries are manually installed.
         """
         try:
-            # Try importing real libraries
-            import librosa
-            import numpy as np
-            import soundfile as sf
-            from basic_pitch.inference import predict
-            import music21
-            
-            # --- REAL IMPLEMENTATION ---
             lesson_dir = self.get_lesson_dir(lesson_id)
             audio_path = os.path.join(lesson_dir, "guitar.mp3")
 
@@ -40,39 +38,98 @@ class TranscriptionService:
             # Noise Gate
             rms = librosa.feature.rms(y=y)
             if np.max(rms) < 0.02:
+                # Silence
                 return "z4 |]"
 
-            # Inference
-            import tempfile
+            # Inference (Basic Pitch)
+            # Create temp wav for basic-pitch
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp_wav:
                 sf.write(tmp_wav.name, y, sr)
+                # Run prediction
                 _, midi_data, _ = predict(tmp_wav.name, onset_threshold=0.6, minimum_frequency=80.0)
 
-            # Quantization
+            # Quantization (Music21)
+            # basic-pitch returns pretty-midi object. Convert to midi file for music21?
+            # midi_data is a pretty_midi object.
+            
             with tempfile.NamedTemporaryFile(suffix=".mid", delete=True) as tmp_midi:
                 midi_data.write(tmp_midi.name)
                 s = music21.converter.parse(tmp_midi.name)
+                # Quantize to nearest 16th note (approx)
                 quantized = s.quantize([4], processOffsets=True, processDurations=True)
                 
-                with tempfile.NamedTemporaryFile(suffix=".abc", delete=True) as tmp_abc:
-                    quantized.write('abc', fp=tmp_abc.name)
-                    with open(tmp_abc.name, 'r') as f:
-                        return f.read()
+                # music21 ABC export
+                return self._stream_to_abc_manual(quantized)
 
-        except ImportError as e:
-            logger.warning(f"AI Dependencies missing ({e}). Using MOCK transcription.")
-            # Mock Response for Python 3.13 users
-            return self._get_mock_abc(start, end)
         except Exception as e:
             logger.error(f"Transcription error: {e}")
-            return "z4 |] % Error: " + str(e)
+            # Return error as comment in ABC so user sees it
+            return f"z4 |] % Error: {str(e)}"
 
-    def _get_mock_abc(self, start: float, end: float) -> str:
-        """Returns a dummy ABC score for testing/fallback."""
-        # Simple C Major scale lick
-        return """X:1
-T:AI Transcription (Mock)
-M:4/4
-L:1/8
-K:C
-cdef g2 e2 | c2 G2 E2 C2 |]"""
+    def _stream_to_abc_manual(self, stream) -> str:
+        """Manually convert music21 stream to ABC string (Monophonic)."""
+        import math
+        
+        lines = [
+            "X:1",
+            "T:AI Transcription",
+            "M:4/4",
+            "L:1/16",
+            "K:C"
+        ]
+        
+        # Flatten and get notes/rests
+        flat = stream.flat.notesAndRests
+        
+        abc_notes = []
+        for el in flat:
+            # Duration (base 1/16th)
+            # quarterLength 1.0 = 4 units (16th notes)
+            units = el.duration.quarterLength * 4
+            dur_str = ""
+            if units != 1.0:
+                 if abs(round(units) - units) < 0.01:
+                     dur_str = str(int(round(units)))
+                 else:
+                     dur_str = str(int(units)) 
+            
+            # Element Text
+            token = ""
+            if el.isRest:
+                token = "z"
+            elif 'Chord' in el.classes:
+                # Handle Chord: [note1 note2]
+                chord_notes = []
+                for p in el.pitches:
+                    chord_notes.append(self._pitch_to_abc(p))
+                token = f"[{''.join(chord_notes)}]"
+            elif 'Note' in el.classes:
+                # Handle Note
+                token = self._pitch_to_abc(el.pitch)
+            else:
+                continue
+
+            abc_notes.append(f"{token}{dur_str}")
+        
+        lines.append(" ".join(abc_notes) + " |]")
+        return "\n".join(lines)
+
+    def _pitch_to_abc(self, pitch_obj) -> str:
+        """Helper to convert music21 Pitch to ABC string."""
+        step = pitch_obj.step
+        accidental = pitch_obj.accidental.modifier if pitch_obj.accidental else ""
+        octave = pitch_obj.octave
+        
+        if octave >= 4:
+            note_char = step.lower()
+            suffix = "'" * (octave - 4)
+        else:
+            note_char = step.upper()
+            suffix = "," * (3 - octave)
+        
+        acc_map = {'#': '^', '-': '_', 'n': '='}
+        abc_acc = acc_map.get(accidental, "")
+        if accidental == '-': abc_acc = '_' 
+        elif accidental == 'b': abc_acc = '_'
+        
+        return f"{abc_acc}{note_char}{suffix}"

@@ -15,3 +15,7 @@ langchain-openai
 pydantic>=2.0.0
 pydantic-settings
 numpy<2.0.0
+tensorflow==2.15.0
+basic-pitch
+music21
+librosa
