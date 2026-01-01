@@ -19,12 +19,8 @@ app = FastAPI(
 )
 
 # CORS Configuration
-# Allow local frontend development (Vite usually runs on 5173)
-origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-]
+# Allow all origins to support various deployment environments
+origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
