@@ -222,9 +222,18 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
         });
 
         // Cleanup
+        // Cleanup
         return () => {
-            wsV.current?.destroy();
-            wsG.current?.destroy();
+            try {
+                wsV.current?.destroy();
+            } catch (e) {
+                // Ignore AbortError during cleanup
+            }
+            try {
+                wsG.current?.destroy();
+            } catch (e) {
+                // Ignore AbortError during cleanup
+            }
         }
     }, [lessonId]); // Re-init on lesson change
 
@@ -286,7 +295,7 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
 
 
     return (
-        <div className={cn("bg-white rounded-xl border border-neutral-200 shadow-sm p-4", className)}>
+        <div className={cn("bg-white rounded-xl border border-neutral-200 shadow-sm p-2 sm:p-4 w-full min-w-0", className)}>
             <TransportControls
                 className="mb-4"
                 isPlaying={isPlaying}
@@ -310,19 +319,19 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
             />
 
             {/* Waveforms */}
-            <div className="space-y-4">
-                <div className="relative bg-neutral-50 rounded-lg p-2 border border-neutral-100">
+            <div className="space-y-4 w-full">
+                <div className="relative bg-neutral-50 rounded-lg p-2 border border-neutral-100 overflow-x-auto w-full">
                     <span className="absolute top-2 left-2 text-[10px] font-bold bg-white/80 px-1.5 py-0.5 rounded pointer-events-none z-10">
                         🗣️ Vocals
                     </span>
-                    <div ref={containerV} />
+                    <div ref={containerV} className="w-full" />
                 </div>
 
-                <div className="relative bg-neutral-50 rounded-lg p-2 border border-neutral-100">
+                <div className="relative bg-neutral-50 rounded-lg p-2 border border-neutral-100 overflow-x-auto w-full">
                     <span className="absolute top-2 left-2 text-[10px] font-bold bg-white/80 px-1.5 py-0.5 rounded pointer-events-none z-10">
                         🎸 Guitar
                     </span>
-                    <div ref={containerG} />
+                    <div ref={containerG} className="w-full" />
                 </div>
             </div>
 

@@ -53,84 +53,95 @@ export function TransportControls({
     };
 
     return (
-        <div className={cn("bg-neutral-900 text-white p-3 rounded-lg flex items-center flex-wrap gap-3 sm:gap-4", className)} {...props}>
-            {/* Skip Start */}
-            <button
-                onClick={onSkipStart}
-                className="w-8 h-8 rounded-full bg-neutral-800 hover:bg-neutral-700 flex items-center justify-center transition-colors text-neutral-400 hover:text-white shrink-0"
-            >
-                <SkipBack className="w-4 h-4 fill-current" />
-            </button>
+        <div className={cn("bg-neutral-900 text-white p-3 rounded-lg flex flex-col sm:flex-row sm:items-center sm:flex-wrap gap-4", className)} {...props}>
 
-            {/* Play Toggle */}
-            <button
-                onClick={onPlayPause}
-                className="w-10 h-10 rounded-full bg-orange-600 hover:bg-orange-500 flex items-center justify-center transition-colors shrink-0"
-            >
-                {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
-            </button>
+            {/* Group 1: Transport Buttons */}
+            <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-4 w-full sm:w-auto">
+                <div className="flex items-center gap-2">
+                    {/* Skip Start */}
+                    <button
+                        onClick={onSkipStart}
+                        className="w-8 h-8 rounded-full bg-neutral-800 hover:bg-neutral-700 flex items-center justify-center transition-colors text-neutral-400 hover:text-white shrink-0"
+                    >
+                        <SkipBack className="w-4 h-4 fill-current" />
+                    </button>
 
-            {/* Skip End */}
-            <button
-                onClick={onSkipEnd}
-                className="w-8 h-8 rounded-full bg-neutral-800 hover:bg-neutral-700 flex items-center justify-center transition-colors text-neutral-400 hover:text-white shrink-0"
-            >
-                <SkipForward className="w-4 h-4 fill-current" />
-            </button>
+                    {/* Play Toggle */}
+                    <button
+                        onClick={onPlayPause}
+                        className="w-10 h-10 rounded-full bg-orange-600 hover:bg-orange-500 flex items-center justify-center transition-colors shrink-0"
+                    >
+                        {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
+                    </button>
 
-            {/* Loop Toggle */}
-            <button
-                onClick={() => onLoopChange(!loop)}
-                className={cn(
-                    "w-10 h-10 rounded-full flex items-center justify-center transition-colors shrink-0",
-                    loop ? "bg-blue-600 hover:bg-blue-500 text-white" : "bg-neutral-800 hover:bg-neutral-700 text-neutral-400"
-                )}
-                title={loop ? "Loop: ON" : "Loop: OFF"}
-            >
-                <Repeat className="w-5 h-5" />
-            </button>
+                    {/* Skip End */}
+                    <button
+                        onClick={onSkipEnd}
+                        className="w-8 h-8 rounded-full bg-neutral-800 hover:bg-neutral-700 flex items-center justify-center transition-colors text-neutral-400 hover:text-white shrink-0"
+                    >
+                        <SkipForward className="w-4 h-4 fill-current" />
+                    </button>
+                </div>
 
-            {/* Clear Selection */}
-            {hasSelection && (
-                <button
-                    onClick={onClearSelection}
-                    className="w-10 h-10 rounded-full bg-neutral-800 hover:bg-red-900/50 text-neutral-400 hover:text-red-400 flex items-center justify-center transition-colors shrink-0"
-                    title="Clear Selection"
-                >
-                    <X className="w-5 h-5" />
-                </button>
-            )}
+                <div className="flex items-center gap-2">
+                    {/* Loop Toggle */}
+                    <button
+                        onClick={() => onLoopChange(!loop)}
+                        className={cn(
+                            "w-10 h-10 rounded-full flex items-center justify-center transition-colors shrink-0",
+                            loop ? "bg-blue-600 hover:bg-blue-500 text-white" : "bg-neutral-800 hover:bg-neutral-700 text-neutral-400"
+                        )}
+                        title={loop ? "Loop: ON" : "Loop: OFF"}
+                    >
+                        <Repeat className="w-5 h-5" />
+                    </button>
 
-            {/* Speed */}
-            <div className="flex flex-col gap-1 flex-1 sm:flex-none sm:min-w-[100px]">
-                <label className="text-[10px] text-neutral-400 font-medium uppercase tracking-wider whitespace-nowrap">
-                    Speed: <span className="text-white">{playbackRate.toFixed(1)}x</span>
-                </label>
-                <input
-                    type="range"
-                    min="0.25" max="1.5" step="0.05"
-                    value={playbackRate}
-                    onChange={(e) => onPlaybackRateChange(parseFloat(e.target.value))}
-                    className="accent-orange-500 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer w-full"
-                />
+                    {/* Clear Selection */}
+                    {hasSelection && (
+                        <button
+                            onClick={onClearSelection}
+                            className="w-10 h-10 rounded-full bg-neutral-800 hover:bg-red-900/50 text-neutral-400 hover:text-red-400 flex items-center justify-center transition-colors shrink-0"
+                            title="Clear Selection"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                    )}
+                </div>
             </div>
 
-            {/* Zoom */}
-            <div className="flex flex-col gap-1 flex-1 sm:flex-none sm:min-w-[100px]">
-                <label className="text-[10px] text-neutral-400 font-medium uppercase tracking-wider flex items-center gap-1 whitespace-nowrap">
-                    <ZoomIn className="w-3 h-3" /> Zoom
-                </label>
-                <input
-                    type="range"
-                    min="10" max="200" step="10"
-                    value={zoom}
-                    onChange={(e) => onZoomChange(parseInt(e.target.value))}
-                    className="accent-neutral-500 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer w-full"
-                />
+            {/* Group 2: Sliders */}
+            <div className="grid grid-cols-2 gap-4 w-full sm:w-auto sm:flex sm:gap-4">
+                {/* Speed */}
+                <div className="flex flex-col gap-1 w-full sm:w-[100px]">
+                    <label className="text-[10px] text-neutral-400 font-medium uppercase tracking-wider whitespace-nowrap">
+                        Speed: <span className="text-white">{playbackRate.toFixed(1)}x</span>
+                    </label>
+                    <input
+                        type="range"
+                        min="0.25" max="1.5" step="0.05"
+                        value={playbackRate}
+                        onChange={(e) => onPlaybackRateChange(parseFloat(e.target.value))}
+                        className="accent-orange-500 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer w-full"
+                    />
+                </div>
+
+                {/* Zoom */}
+                <div className="flex flex-col gap-1 w-full sm:w-[100px]">
+                    <label className="text-[10px] text-neutral-400 font-medium uppercase tracking-wider flex items-center gap-1 whitespace-nowrap">
+                        <ZoomIn className="w-3 h-3" /> Zoom
+                    </label>
+                    <input
+                        type="range"
+                        min="10" max="200" step="10"
+                        value={zoom}
+                        onChange={(e) => onZoomChange(parseInt(e.target.value))}
+                        className="accent-neutral-500 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer w-full"
+                    />
+                </div>
             </div>
 
-            {/* Tracks */}
-            <div className="flex items-center gap-4 border-t sm:border-t-0 sm:border-l border-neutral-700 pt-3 sm:pt-0 sm:pl-4 w-full sm:w-auto mt-1 sm:mt-0 justify-between sm:justify-start">
+            {/* Group 3: Tracks & Time */}
+            <div className="flex items-center justify-between sm:justify-start gap-4 w-full sm:w-auto border-t border-neutral-800 pt-3 sm:border-0 sm:pt-0 sm:ml-auto">
                 <div className="flex gap-4">
                     <label className="flex items-center gap-2 cursor-pointer text-xs">
                         <input
@@ -152,12 +163,14 @@ export function TransportControls({
                     </label>
                 </div>
 
-                {/* Time (Moved inside flex row for mobile alignment or kept separate?) */}
-                {/* On mobile, let's keep time next to tracks or stack it. */}
-                {/* Original layout had time at ml-auto. On mobile this breaks if wrapped. */}
-                <div className="sm:ml-auto font-mono text-sm text-neutral-300">
+                <div className="font-mono text-sm text-neutral-400 sm:hidden lg:block">
                     {formatTime(currentTime)} / {formatTime(totalTime)}
                 </div>
+            </div>
+
+            {/* Desktop Time (hidden on mobile to avoid crowding Group 3, shown in Group 3 on mobile) */}
+            <div className="hidden sm:block lg:hidden font-mono text-sm text-neutral-400 ml-auto">
+                {formatTime(currentTime)} / {formatTime(totalTime)}
             </div>
         </div>
     )
