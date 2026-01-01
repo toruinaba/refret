@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react"
-import { useParams, Link } from "react-router-dom"
-import { ArrowLeft, Clock, Tag, FileText } from "lucide-react"
+import { useParams, Link, useNavigate } from "react-router-dom"
+import { ArrowLeft, Clock, Tag, FileText, Music, Wand2, Trash2 } from "lucide-react"
 import type { Lick } from "../types"
 import { api } from "../lib/api"
 import { MultiTrackPlayer } from "../components/player/MultiTrackPlayer"
 import { TagInput } from "../components/ui/TagInput"
 import { MarkdownEditor } from "../components/ui/MarkdownEditor"
 import { MarkdownRenderer } from "../components/ui/MarkdownRenderer"
+import { AbcRenderer } from "../components/ui/AbcRenderer"
 
 export function LickDetail() {
     const { id } = useParams<{ id: string }>()
+    const navigate = useNavigate()
     const [lick, setLick] = useState<Lick | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -18,7 +20,9 @@ export function LickDetail() {
     const [editTitle, setEditTitle] = useState("")
     const [editTags, setEditTags] = useState<string[]>([])
     const [editMemo, setEditMemo] = useState("")
+    const [editAbc, setEditAbc] = useState("")
     const [saving, setSaving] = useState(false)
+    const [transcribing, setTranscribing] = useState(false)
 
     useEffect(() => {
         if (!id) return;
@@ -40,8 +44,26 @@ export function LickDetail() {
         if (!lick) return
         setEditTitle(lick.title)
         setEditTags(lick.tags || [])
-        setEditMemo(lick.memo)
+        setEditMemo(lick.memo || "")
+        setEditAbc(lick.abc_score || "")
         setIsEditing(true)
+    }
+
+    const handleDelete = async () => {
+        if (!id) return;
+        if (window.confirm("Are you sure you want to delete this lick?")) {
+            try {
+                await api.deleteLick(id);
+                if (lick) {
+                    navigate(`/lesson/${lick.lesson_dir}`);
+                } else {
+                    navigate("/licks");
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Failed to delete lick");
+            }
+        }
     }
 
     const handleUpdate = async () => {
@@ -51,7 +73,8 @@ export function LickDetail() {
             const updated = await api.updateLick(id, {
                 title: editTitle,
                 tags: editTags,
-                memo: editMemo
+                memo: editMemo,
+                abc_score: editAbc
             })
             setLick(updated)
             setIsEditing(false)
@@ -60,6 +83,22 @@ export function LickDetail() {
             setError("Failed to update lick")
         } finally {
             setSaving(false)
+        }
+    }
+
+    const handleTranscribe = async () => {
+        if (!lick) return
+        try {
+            setTranscribing(true)
+            const res = await api.transcribeAudio(lick.lesson_dir, lick.start, lick.end)
+            if (res.abc) {
+                setEditAbc(res.abc)
+            }
+        } catch (e) {
+            console.error(e)
+            alert("Transcription failed. Please ensure backend requirements are met.")
+        } finally {
+            setTranscribing(false)
         }
     }
 
@@ -105,6 +144,13 @@ export function LickDetail() {
                             >
                                 {saving ? "Saving..." : "Save Changes"}
                             </button>
+                            <button
+                                onClick={handleDelete}
+                                className="px-3 py-1.5 text-sm bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 rounded-md flex items-center gap-1"
+                                title="Delete Lick"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                            </button>
                         </>
                     ) : (
                         <button onClick={startEditing} className="px-3 py-1.5 text-sm border border-neutral-200 hover:bg-neutral-50 rounded-md text-neutral-700">
@@ -119,12 +165,51 @@ export function LickDetail() {
                 <MultiTrackPlayer
                     lessonId={lick.lesson_dir}
                     initialRegion={{ start: lick.start, end: lick.end }}
+                    initialVocalsMuted={true}
                 />
             </div>
 
             {/* Details Card */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="md:col-span-2 space-y-4">
+                    {/* Score Card */}
+                    <div className="bg-white p-6 rounded-lg border border-neutral-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="flex items-center gap-2 font-semibold text-neutral-900">
+                                <Music className="w-4 h-4" /> Score / Tab
+                            </h3>
+                            {isEditing && (
+                                <button
+                                    onClick={handleTranscribe}
+                                    disabled={transcribing}
+                                    className="text-xs flex items-center gap-1 bg-purple-100 text-purple-700 px-2 py-1.5 rounded hover:bg-purple-200 disabled:opacity-50"
+                                >
+                                    <Wand2 className="w-3 h-3" /> {transcribing ? "Transcribing..." : "Auto Transcribe"}
+                                </button>
+                            )}
+                        </div>
+
+                        {isEditing ? (
+                            <div className="space-y-2">
+                                <textarea
+                                    value={editAbc}
+                                    onChange={e => setEditAbc(e.target.value)}
+                                    className="w-full h-40 font-mono text-sm border border-neutral-300 rounded-lg p-3 focus:border-orange-500 outline-none"
+                                    placeholder="X:1&#10;K:C&#10;CDEF..."
+                                />
+                                <p className="text-xs text-neutral-400 text-right">ABC Notation</p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                {lick.abc_score ? (
+                                    <AbcRenderer notation={lick.abc_score} />
+                                ) : (
+                                    <p className="italic text-neutral-400">No score available.</p>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
                     <div className="bg-white p-6 rounded-lg border border-neutral-200 shadow-sm">
                         <h3 className="flex items-center gap-2 font-semibold text-neutral-900 mb-4">
                             <FileText className="w-4 h-4" /> Memo

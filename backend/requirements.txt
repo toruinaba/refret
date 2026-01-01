@@ -9,8 +9,9 @@ torchaudio
 python-dotenv
 av>=13.0.0
 soundfile
-pandas
+pandas>=2.2.0
 langchain
 langchain-openai
 pydantic>=2.0.0
 pydantic-settings
+numpy<2.0.0

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react"
-import { useParams, Link } from "react-router-dom"
-import { ArrowLeft, Plus, X, FileText, Tag, Calendar, PlayCircle, ChevronDown, ChevronRight, Music } from "lucide-react"
+import { useParams, Link, useNavigate } from "react-router-dom"
+import { ArrowLeft, Plus, X, FileText, Tag, Calendar, PlayCircle, ChevronDown, ChevronRight, Music, Trash2 } from "lucide-react"
 import { MultiTrackPlayer, type MultiTrackPlayerRef } from "../components/player/MultiTrackPlayer"
 import { api } from "../lib/api"
 import type { LessonDetail as LessonDetailType } from "../types"
@@ -11,6 +11,7 @@ import { cn } from "../lib/utils"
 
 export function LessonDetail() {
     const { id } = useParams<{ id: string }>()
+    const navigate = useNavigate()
     const [lesson, setLesson] = useState<LessonDetailType | null>(null)
     const [selection, setSelection] = useState<{ start: number, end: number } | null>(null)
     const [isCreating, setIsCreating] = useState(false)
@@ -54,6 +55,20 @@ export function LessonDetail() {
         } catch (e) {
             console.error(e)
             alert("Failed to save metadata")
+        }
+    }
+
+    const handleDelete = async () => {
+        if (!id) return;
+        if (window.confirm("Are you sure you want to delete this lesson? This action cannot be undone.")) {
+            try {
+                await api.deleteLesson(id);
+                alert("Lesson deleted.");
+                navigate("/");
+            } catch (e) {
+                console.error(e);
+                alert("Failed to delete lesson.");
+            }
         }
     }
 
@@ -136,12 +151,20 @@ export function LessonDetail() {
                             {isEditing ? "Cancel Editing" : "Edit Metadata"}
                         </button>
                         {isEditing && (
-                            <button
-                                onClick={handleSaveMetadata}
-                                className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-neutral-900 text-white hover:bg-neutral-800 shadow-sm"
-                            >
-                                Save Changes
-                            </button>
+                            <>
+                                <button
+                                    onClick={handleSaveMetadata}
+                                    className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-neutral-900 text-white hover:bg-neutral-800 shadow-sm"
+                                >
+                                    Save Changes
+                                </button>
+                                <button
+                                    onClick={handleDelete}
+                                    className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 flex items-center justify-center gap-2"
+                                >
+                                    <Trash2 className="w-4 h-4" /> Delete Lesson
+                                </button>
+                            </>
                         )}
                     </div>
                 </div>

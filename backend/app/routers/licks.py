@@ -17,6 +17,7 @@ class LickCreate(BaseModel):
     start: float
     end: float
     memo: str = ""
+    abc_score: str = ""
 
 class LickUpdate(BaseModel):
     title: Optional[str] = None
@@ -24,6 +25,7 @@ class LickUpdate(BaseModel):
     memo: Optional[str] = None
     start: Optional[float] = None
     end: Optional[float] = None
+    abc_score: Optional[str] = None
 
 @router.get("/", response_model=Dict[str, Any])
 async def list_licks(

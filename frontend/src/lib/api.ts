@@ -50,6 +50,10 @@ export const api = {
         return res.data;
     },
 
+    deleteLesson: async (id: string): Promise<void> => {
+        await client.delete(`/lessons/${id}`);
+    },
+
     // Licks
     getLicks: async (params?: { page?: number, limit?: number, tags?: string[], lesson_id?: string, date_from?: string, date_to?: string }): Promise<PaginatedResponse<Lick>> => {
         const query: any = { ...params };
@@ -63,6 +67,17 @@ export const api = {
     getLick: async (id: string): Promise<Lick> => {
         const res = await client.get(`/licks/${id}`);
         return res.data;
+    },
+
+    // Transcription
+    transcribeAudio: async (lessonId: string, start: number, end: number) => {
+        const res = await fetch(`${API_BASE_URL}/transcribe/`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lesson_id: lessonId, start_time: start, end_time: end }),
+        });
+        if (!res.ok) throw new Error("Transcription failed");
+        return res.json(); // returns { abc: string }
     },
 
     createLick: async (data: Omit<Lick, 'id' | 'created_at'>): Promise<Lick> => {

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.routers import lessons, licks, settings as settings_router, tags as tags_router
+from app.routers import lessons, licks, settings, tags, transcribe
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -36,8 +36,9 @@ app.add_middleware(
 
 app.include_router(lessons.router, prefix="/api/lessons", tags=["lessons"])
 app.include_router(licks.router, prefix="/api/licks", tags=["licks"])
-app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])
-app.include_router(tags_router.router, prefix="/api/tags", tags=["tags"])
+app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
+app.include_router(tags.router, prefix="/api/tags", tags=["tags"])
+app.include_router(transcribe.router, prefix="/api/transcribe", tags=["transcribe"])
 
 @app.get("/health")
 async def health_check():

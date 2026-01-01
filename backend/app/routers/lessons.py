@@ -253,3 +253,9 @@ async def get_transcript(lesson_id: str, store: StoreService = Depends(get_store
     # Let's assume for now we just return what's in metadata or empty.
     
     return {"transcript": meta.get("transcript", "")}
+
+@router.delete("/{lesson_id}")
+async def delete_lesson(lesson_id: str, store: StoreService = Depends(get_store)):
+    """Delete a lesson."""
+    store.delete_lesson(lesson_id)
+    return {"status": "deleted", "id": lesson_id}

@@ -17,11 +17,12 @@ export interface Lick {
     id: string;
     lesson_dir: string;
     title: string;
-    tags: string[];
     start: number;
     end: number;
-    memo: string;
-    created_at: string;
+    tags?: string[];
+    created_at?: string;
+    memo?: string;
+    abc_score?: string;
 }
 
 export interface PaginatedResponse<T> {

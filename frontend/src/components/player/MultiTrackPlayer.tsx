@@ -11,13 +11,14 @@ interface MultiTrackPlayerProps {
     onSelectionChange?: (region: { start: number, end: number } | null) => void;
     className?: string;
     autoPlay?: boolean;
+    initialVocalsMuted?: boolean;
 }
 
 export interface MultiTrackPlayerRef {
     seekTo: (time: number) => void;
 }
 
-export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayerProps>(({ lessonId, initialRegion, onSelectionChange, className, autoPlay = false }, ref) => {
+export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayerProps>(({ lessonId, initialRegion, onSelectionChange, className, autoPlay = false, initialVocalsMuted = false }, ref) => {
     // Container Refs
     const containerV = useRef<HTMLDivElement>(null)
     const containerG = useRef<HTMLDivElement>(null)
@@ -32,7 +33,7 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
     const [isPlaying, setIsPlaying] = useState(false)
     const [playbackRate, setPlaybackRate] = useState(1.0)
     const [zoom, setZoom] = useState(20)
-    const [vocalsMuted, setVocalsMuted] = useState(false)
+    const [vocalsMuted, setVocalsMuted] = useState(initialVocalsMuted)
     const [guitarMuted, setGuitarMuted] = useState(false)
     const [currentTime, setCurrentTime] = useState(0)
     const [totalTime, setTotalTime] = useState(0)
