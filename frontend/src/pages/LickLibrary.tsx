@@ -84,7 +84,7 @@ export function LickLibrary() {
                                         <div className="flex flex-col gap-2 text-sm text-neutral-500">
                                             <div className="flex items-center gap-2">
                                                 <Music className="w-4 h-4" />
-                                                <span>{lick.lesson_dir}</span>
+                                                <span>{lick.lesson_id}</span>
                                             </div>
                                             <div className="text-xs font-mono bg-neutral-100 px-2 py-1 rounded w-fit">
                                                 {lick.start.toFixed(2)}s - {lick.end.toFixed(2)}s

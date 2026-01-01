@@ -137,7 +137,7 @@ export function LessonDetail() {
         try {
             setSubmitting(true)
             await api.createLick({
-                lesson_dir: id,
+                lesson_id: id,
                 title: createTitle || "New Lick",
                 tags: createTags.split(",").map(t => t.trim()).filter(Boolean),
                 memo: createMemo,

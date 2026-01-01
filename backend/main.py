@@ -2,12 +2,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.routers import lessons, licks, settings, tags, transcribe
+from app.routers import lessons, licks, settings, tags, transcribe, journal
+from app.services.database import DatabaseService
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Load AI models here if needed in future
     print("🎸 Refret Backend Starting...")
+    DatabaseService().init_db()
+    print("📦 Database initialized")
     yield
     print("👋 Refret Backend Shutting down...")
 
@@ -35,6 +38,7 @@ app.include_router(licks.router, prefix="/api/licks", tags=["licks"])
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.include_router(tags.router, prefix="/api/tags", tags=["tags"])
 app.include_router(transcribe.router, prefix="/api/transcribe", tags=["transcribe"])
+app.include_router(journal.router, prefix="/api/journal", tags=["journal"])
 
 @app.get("/health")
 async def health_check():

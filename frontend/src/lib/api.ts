@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Lesson, LessonDetail, Lick, PaginatedResponse } from '../types';
+import type { Lesson, LessonDetail, Lick, PaginatedResponse, PracticeLog, JournalStats } from '../types';
 
 const API_BASE_URL = '/api';
 
@@ -148,5 +148,33 @@ export const api = {
     // Audio helpers
     getAudioUrl: (lessonId: string, track: 'vocals' | 'guitar') => {
         return `${API_BASE_URL}/lessons/${lessonId}/audio/${track}`;
+    },
+
+    // Journal
+    getLogs: async (start?: string, end?: string): Promise<PracticeLog[]> => {
+        const params: any = {};
+        if (start) params.start = start;
+        if (end) params.end = end;
+        const res = await client.get('/journal', { params });
+        return res.data;
+    },
+
+    createLog: async (data: Partial<PracticeLog>): Promise<PracticeLog> => {
+        const res = await client.post('/journal', data);
+        return res.data;
+    },
+
+    updateLog: async (id: number, data: Partial<PracticeLog>): Promise<PracticeLog> => {
+        const res = await client.put(`/journal/${id}`, data);
+        return res.data;
+    },
+
+    deleteLog: async (id: number): Promise<void> => {
+        await client.delete(`/journal/${id}`);
+    },
+
+    getJournalStats: async (): Promise<JournalStats> => {
+        const res = await client.get('/journal/stats');
+        return res.data;
     }
 };

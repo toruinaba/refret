@@ -55,7 +55,7 @@ export function LickDetail() {
             try {
                 await api.deleteLick(id);
                 if (lick) {
-                    navigate(`/lesson/${lick.lesson_dir}`);
+                    navigate(`/lesson/${lick.lesson_id}`);
                 } else {
                     navigate("/licks");
                 }
@@ -90,7 +90,7 @@ export function LickDetail() {
         if (!lick) return
         try {
             setTranscribing(true)
-            const res = await api.transcribeAudio(lick.lesson_dir, lick.start, lick.end)
+            const res = await api.transcribeAudio(lick.lesson_id!, lick.start, lick.end)
             if (res.abc) {
                 setEditAbc(res.abc)
             }
@@ -116,7 +116,7 @@ export function LickDetail() {
                     <div className="flex-1">
                         <div className="flex items-center gap-2 text-neutral-500 text-sm mb-1">
                             <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded text-xs font-semibold">Lick</span>
-                            <span>From Lesson: <Link to={`/lesson/${lick.lesson_dir}`} className="hover:underline text-orange-600">{lick.lesson_dir}</Link></span>
+                            <span>From Lesson: <Link to={`/lesson/${lick.lesson_id}`} className="hover:underline text-orange-600">{lick.lesson_id}</Link></span>
                         </div>
                         {isEditing ? (
                             <input
@@ -163,7 +163,7 @@ export function LickDetail() {
             {/* Player (Unchanged) */}
             <div className="bg-neutral-50 p-6 rounded-xl border border-neutral-200">
                 <MultiTrackPlayer
-                    lessonId={lick.lesson_dir}
+                    lessonId={lick.lesson_id!}
                     initialRegion={{ start: lick.start, end: lick.end }}
                     initialVocalsMuted={true}
                 />
