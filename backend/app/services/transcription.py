@@ -21,6 +21,15 @@ class TranscriptionService:
         """
         Transcribe a segment of the guitar track to ABC notation.
         """
+        from app.services.store import StoreService
+        store = StoreService()
+        overrides = store.get_settings_override()
+        settings = get_settings()
+
+        onset_thresh = overrides.get("bp_onset_threshold") or settings.BP_ONSET_THRESHOLD
+        min_freq = overrides.get("bp_min_frequency") or settings.BP_MIN_FREQUENCY
+        q_grid = overrides.get("bp_quantize_grid") or settings.BP_QUANTIZE_GRID
+
         try:
             lesson_dir = self.get_lesson_dir(lesson_id)
             audio_path = os.path.join(lesson_dir, "guitar.mp3")
@@ -46,7 +55,7 @@ class TranscriptionService:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp_wav:
                 sf.write(tmp_wav.name, y, sr)
                 # Run prediction
-                _, midi_data, _ = predict(tmp_wav.name, onset_threshold=0.6, minimum_frequency=80.0)
+                _, midi_data, _ = predict(tmp_wav.name, onset_threshold=onset_thresh, minimum_frequency=min_freq)
 
             # Quantization (Music21)
             # basic-pitch returns pretty-midi object. Convert to midi file for music21?
@@ -56,7 +65,7 @@ class TranscriptionService:
                 midi_data.write(tmp_midi.name)
                 s = music21.converter.parse(tmp_midi.name)
                 # Quantize to nearest 16th note (approx)
-                quantized = s.quantize([4], processOffsets=True, processDurations=True)
+                quantized = s.quantize([q_grid], processOffsets=True, processDurations=True)
                 
                 # music21 ABC export
                 return self._stream_to_abc_manual(quantized)

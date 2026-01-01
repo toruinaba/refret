@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, Plus, X, FileText, Tag, Calendar, PlayCircle, ChevronDown, ChevronRight, Music, Trash2 } from "lucide-react"
+import { ArrowLeft, Plus, X, FileText, Tag, Calendar, PlayCircle, ChevronDown, ChevronRight, Music, Trash2, RefreshCw, Sparkles, Layers, Mic, Loader2 } from "lucide-react"
 import { MultiTrackPlayer, type MultiTrackPlayerRef } from "../components/player/MultiTrackPlayer"
 import { api } from "../lib/api"
 import type { LessonDetail as LessonDetailType } from "../types"
@@ -33,6 +33,53 @@ export function LessonDetail() {
     const [createTags, setCreateTags] = useState("")
     const [createMemo, setCreateMemo] = useState("")
     const [submitting, setSubmitting] = useState(false)
+    const [processingTask, setProcessingTask] = useState<string | null>(null)
+    const [processingProgress, setProcessingProgress] = useState(0)
+    const [processingMessage, setProcessingMessage] = useState("")
+
+    useEffect(() => {
+        if (!processingTask || !id) return
+
+        const interval = setInterval(async () => {
+            try {
+                const status = await api.getLessonStatus(id)
+                setProcessingProgress(status.progress)
+                setProcessingMessage(status.message)
+
+                if (status.status === 'completed') {
+                    // Reload data
+                    const newData = await api.getLesson(id)
+                    setLesson(newData as LessonDetailType)
+                    setProcessingTask(null)
+                    clearInterval(interval)
+                } else if (status.status === 'failed') {
+                    setProcessingTask(null)
+                    alert("Processing Failed: " + status.message)
+                    clearInterval(interval)
+                }
+            } catch (e) {
+                console.error(e)
+            }
+        }, 1000)
+
+        return () => clearInterval(interval)
+    }, [processingTask, id])
+
+    const handleReprocess = async (task: 'separate' | 'transcribe' | 'summarize') => {
+        if (!id) return
+        if (!window.confirm(`Are you sure you want to re-run ${task}? This will overwrite existing data for this step.`)) return
+
+        try {
+            setProcessingTask(task)
+            setProcessingProgress(0)
+            setProcessingMessage("Starting...")
+            await api.reprocessLesson(id, task)
+        } catch (e) {
+            console.error(e)
+            alert("Failed to start processing")
+            setProcessingTask(null)
+        }
+    }
 
     useEffect(() => {
         if (!id) return;
@@ -150,8 +197,9 @@ export function LessonDetail() {
                         >
                             {isEditing ? "Cancel Editing" : "Edit Metadata"}
                         </button>
+
                         {isEditing && (
-                            <>
+                            <div className="space-y-2 animate-in slide-in-from-top-2 fade-in">
                                 <button
                                     onClick={handleSaveMetadata}
                                     className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-neutral-900 text-white hover:bg-neutral-800 shadow-sm"
@@ -164,7 +212,53 @@ export function LessonDetail() {
                                 >
                                     <Trash2 className="w-4 h-4" /> Delete Lesson
                                 </button>
-                            </>
+
+                                {/* AI Tools Section */}
+                                <div className="mt-4 pt-4 border-t border-neutral-200">
+                                    <h3 className="text-xs font-bold text-neutral-400 uppercase mb-3 flex items-center gap-1.5">
+                                        <Sparkles className="w-3.5 h-3.5" /> AI Tools
+                                    </h3>
+
+                                    {processingTask ? (
+                                        <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200 space-y-2">
+                                            <div className="flex items-center gap-2 text-sm font-medium text-neutral-700">
+                                                <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
+                                                <span className="truncate">{processingMessage || "Processing..."}</span>
+                                            </div>
+                                            <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden w-full">
+                                                <div
+                                                    className="h-full bg-orange-500 transition-all duration-500"
+                                                    style={{ width: `${Math.max(5, processingProgress * 100)}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-1">
+                                            <button
+                                                onClick={() => handleReprocess('separate')}
+                                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 rounded-lg border border-transparent hover:border-neutral-200 transition-all text-left"
+                                            >
+                                                <Layers className="w-4 h-4 text-blue-500" />
+                                                Redo Audio Separation
+                                            </button>
+                                            <button
+                                                onClick={() => handleReprocess('transcribe')}
+                                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 rounded-lg border border-transparent hover:border-neutral-200 transition-all text-left"
+                                            >
+                                                <Mic className="w-4 h-4 text-red-500" />
+                                                Redo Transcription
+                                            </button>
+                                            <button
+                                                onClick={() => handleReprocess('summarize')}
+                                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 rounded-lg border border-transparent hover:border-neutral-200 transition-all text-left"
+                                            >
+                                                <RefreshCw className="w-4 h-4 text-green-500" />
+                                                Redo Summary
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         )}
                     </div>
                 </div>

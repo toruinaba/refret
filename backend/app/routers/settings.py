@@ -28,7 +28,16 @@ async def get_current_settings(store: StoreService = Depends(get_store)):
         "llm_model": overrides.get("llm_model", defaults.LLM_MODEL),
         "system_prompt": overrides.get("system_prompt", defaults.SYSTEM_PROMPT),
         "openai_api_key_masked": masked_key,
-        "openai_api_key_is_set": bool(api_key)
+        "openai_api_key_is_set": bool(api_key),
+        # New Settings
+        "demucs_model": overrides.get("demucs_model", defaults.DEMUCS_MODEL),
+        "demucs_shifts": overrides.get("demucs_shifts", defaults.DEMUCS_SHIFTS),
+        "demucs_overlap": overrides.get("demucs_overlap", defaults.DEMUCS_OVERLAP),
+        "whisper_model": overrides.get("whisper_model", defaults.WHISPER_MODEL),
+        "whisper_beam_size": overrides.get("whisper_beam_size", defaults.WHISPER_BEAM_SIZE),
+        "bp_onset_threshold": overrides.get("bp_onset_threshold", defaults.BP_ONSET_THRESHOLD),
+        "bp_min_frequency": overrides.get("bp_min_frequency", defaults.BP_MIN_FREQUENCY),
+        "bp_quantize_grid": overrides.get("bp_quantize_grid", defaults.BP_QUANTIZE_GRID),
     }
 
 @router.post("")

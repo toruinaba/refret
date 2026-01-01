@@ -54,6 +54,12 @@ export const api = {
         await client.delete(`/lessons/${id}`);
     },
 
+    reprocessLesson: async (id: string, taskType: 'separate' | 'transcribe' | 'summarize'): Promise<void> => {
+        await client.post(`/lessons/${id}/process`, null, {
+            params: { task_type: taskType }
+        });
+    },
+
     // Licks
     getLicks: async (params?: { page?: number, limit?: number, tags?: string[], lesson_id?: string, date_from?: string, date_to?: string }): Promise<PaginatedResponse<Lick>> => {
         const query: any = { ...params };
@@ -100,7 +106,18 @@ export const api = {
         llm_model: string,
         system_prompt: string,
         openai_api_key_masked: string | null,
-        openai_api_key_is_set: boolean
+        openai_api_key_is_set: boolean,
+        // Audio
+        demucs_model?: string,
+        demucs_shifts?: number,
+        demucs_overlap?: number,
+        // Whisper
+        whisper_model?: string,
+        whisper_beam_size?: number,
+        // Basic Pitch
+        bp_onset_threshold?: number,
+        bp_min_frequency?: number,
+        bp_quantize_grid?: number,
     }> => {
         try {
             const res = await client.get("/settings");

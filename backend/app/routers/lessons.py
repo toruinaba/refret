@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, BackgroundTasks, Form
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Literal
 import shutil
 import json
 import traceback
@@ -259,3 +259,103 @@ async def delete_lesson(lesson_id: str, store: StoreService = Depends(get_store)
     """Delete a lesson."""
     store.delete_lesson(lesson_id)
     return {"status": "deleted", "id": lesson_id}
+
+def reprocess_lesson_step(lesson_id: str, task_type: str, store: StoreService):
+    status_file = store.data_dir / lesson_id / "status.json"
+    lesson_dir = store.data_dir / lesson_id
+    
+    def update_status(status: str, progress: float, message: str):
+        with open(status_file, "w") as f:
+            json.dump({
+                "status": status,
+                "progress": progress,
+                "message": message,
+                "updated_at": datetime.now().isoformat()
+            }, f)
+
+    try:
+        from app.services.audio import AudioProcessor
+        processor = AudioProcessor()
+        
+        original_file = list(lesson_dir.glob("original.*"))
+        if not original_file:
+            raise FileNotFoundError("Original audio file not found")
+        original_path = original_file[0]
+
+        if task_type == "separate":
+            update_status("processing", 0.1, "Re-separating Audio...")
+            proc_wav = processor.prepare_wav(original_path)
+            try:
+                processor.separate_audio(proc_wav, lesson_dir)
+            finally:
+                if proc_wav.exists() and proc_wav != original_path:
+                    proc_wav.unlink()
+            update_status("completed", 1.0, "Separation Complete")
+
+        elif task_type == "transcribe":
+            update_status("processing", 0.1, "Re-transcribing...")
+            vocals_path = lesson_dir / "vocals.mp3"
+            if not vocals_path.exists():
+                raise FileNotFoundError("Vocals track not found. Run separation first.")
+            
+            transcript_text, segments = processor.transcribe(vocals_path)
+            
+            # Save Transcript result specifically
+            with open(lesson_dir / "transcript.json", "w") as f:
+                json.dump(segments, f, indent=2)
+            with open(lesson_dir / "transcript.txt", "w") as f:
+                f.write(transcript_text)
+                
+            # Update metadata
+            meta = store.get_lesson_metadata(lesson_id)
+            if meta:
+                meta["transcript"] = transcript_text
+                store.save_lesson_metadata(lesson_id, meta)
+            
+            update_status("completed", 1.0, "Transcription Complete")
+
+        elif task_type == "summarize":
+            update_status("processing", 0.1, "Re-summarizing...")
+            transcript_json = lesson_dir / "transcript.json"
+            if not transcript_json.exists():
+                raise FileNotFoundError("Transcript not found. Run transcription first.")
+                
+            with open(transcript_json, "r") as f:
+                segments = json.load(f)
+                
+            summary_data = processor.summarize(segments)
+            
+            # Save Summary
+            with open(lesson_dir / "summary.json", "w") as f:
+                json.dump(summary_data, f, indent=2)
+                
+            # Update Metadata
+            meta = store.get_lesson_metadata(lesson_id)
+            if meta:
+                meta.update(summary_data)
+                store.save_lesson_metadata(lesson_id, meta)
+            
+            update_status("completed", 1.0, "Summarization Complete")
+            
+        else:
+            raise ValueError(f"Unknown task: {task_type}")
+
+    except Exception as e:
+        print(f"Reprocessing failed: {e}")
+        traceback.print_exc()
+        update_status("failed", 0.0, f"Error: {str(e)}")
+
+
+@router.post("/{lesson_id}/process")
+async def process_lesson(
+    lesson_id: str, 
+    task_type: Literal["separate", "transcribe", "summarize"], 
+    background_tasks: BackgroundTasks,
+    store: StoreService = Depends(get_store)
+):
+    """Trigger a specific processing step for a lesson."""
+    if not (store.data_dir / lesson_id).exists():
+        raise HTTPException(status_code=404, detail="Lesson not found")
+
+    background_tasks.add_task(reprocess_lesson_step, lesson_id, task_type, store)
+    return {"message": f"Started task: {task_type}"}

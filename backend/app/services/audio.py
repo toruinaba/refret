@@ -64,8 +64,14 @@ class AudioProcessor:
         print(f"Separating audio (In-Process Manual): {file_path}")
         
         try:
+            # Load overrides
+            from app.services.store import StoreService
+            store = StoreService()
+            overrides = store.get_settings_override()
+
             # Load Model
-            model = get_model("htdemucs")
+            model_name = overrides.get("demucs_model") or self.settings.DEMUCS_MODEL
+            model = get_model(model_name)
             model.cpu()
             model.eval()
 
@@ -99,7 +105,9 @@ class AudioProcessor:
             
             # Inference
             print("Running inference...")
-            sources = apply_model(model, wav_norm, shifts=1, split=True, overlap=0.25, progress=True)[0]
+            shifts = overrides.get("demucs_shifts") or self.settings.DEMUCS_SHIFTS
+            overlap = overrides.get("demucs_overlap") or self.settings.DEMUCS_OVERLAP
+            sources = apply_model(model, wav_norm, shifts=shifts, split=True, overlap=overlap, progress=True)[0]
             
             # Denormalize
             sources = sources * ref_std + ref_mean
@@ -155,12 +163,20 @@ class AudioProcessor:
     def transcribe(self, audio_path: Path):
         """Transcribe audio using Faster-Whisper."""
         print(f"Transcribing: {audio_path}")
-        model_size = "small"
+        
+        # Load overrides
+        from app.services.store import StoreService
+        store = StoreService()
+        overrides = store.get_settings_override()
+        
+        model_size = overrides.get("whisper_model") or self.settings.WHISPER_MODEL
+        beam_size = overrides.get("whisper_beam_size") or self.settings.WHISPER_BEAM_SIZE
+        
         model = WhisperModel(model_size, device="cpu", compute_type="int8")
 
         segments, info = model.transcribe(
             str(audio_path), 
-            beam_size=5, 
+            beam_size=beam_size, 
             language="ja",
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500),
