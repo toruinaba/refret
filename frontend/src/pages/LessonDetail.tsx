@@ -84,10 +84,15 @@ export function LessonDetail() {
     useEffect(() => {
         if (!id) return;
         api.getLesson(id).then((data) => {
-            setLesson(data as LessonDetailType)
-            setEditTags(data.tags || [])
-            setEditMemo(data.memo || "")
+            const detail = data as LessonDetailType
+            setLesson(detail)
+            setEditTags(detail.tags || [])
+            setEditMemo(detail.memo || "")
 
+            // If status is not completed, start polling
+            if (detail.status && detail.status !== 'completed') {
+                setProcessingTask('initial') // Triggers the existing polling effect
+            }
         }).catch(console.error)
     }, [id])
 
@@ -161,6 +166,27 @@ export function LessonDetail() {
 
     return (
         <div className="space-y-6 pb-20">
+            {processingTask === 'initial' && (
+                <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center p-8 space-y-6 animate-in fade-in">
+                    <div className="relative">
+                        <div className="w-16 h-16 border-4 border-neutral-100 border-t-orange-500 rounded-full animate-spin"></div>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-xs font-bold text-orange-600">{Math.round(processingProgress * 100)}%</span>
+                        </div>
+                    </div>
+                    <div className="text-center space-y-2">
+                        <h2 className="text-xl font-bold text-neutral-900">Processing Lesson...</h2>
+                        <p className="text-neutral-500 max-w-md">
+                            We're analyzing audio, separating tracks, and generating transcriptions.
+                            This usually takes a few minutes.
+                        </p>
+                        <p className="text-sm font-mono bg-neutral-50 px-3 py-1 rounded inline-block text-neutral-600">
+                            {processingMessage || "Initializing..."}
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Header */}
             <div className="flex items-center gap-4 border-b border-neutral-200 pb-4">
                 <Link to="/" className="p-2 hover:bg-neutral-100 rounded-full transition-colors flex-shrink-0">

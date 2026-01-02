@@ -5,6 +5,7 @@ export interface Lesson {
     created_at: string;
     tags?: string[];
     memo?: string;
+    status?: 'queued' | 'processing' | 'completed' | 'error' | string;
     is_processed?: boolean;
 }
 
