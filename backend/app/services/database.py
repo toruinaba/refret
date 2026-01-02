@@ -29,6 +29,7 @@ class DatabaseService:
                     notes TEXT,
                     tags TEXT,
                     sentiment TEXT,
+                    audio_path TEXT,
                     created_at TEXT
                 )
             """)
@@ -143,14 +144,15 @@ class DatabaseService:
         
         with self.get_connection() as conn:
             cursor = conn.execute("""
-                INSERT INTO practice_logs (date, duration_minutes, notes, tags, sentiment, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO practice_logs (date, duration_minutes, notes, tags, sentiment, audio_path, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 data.get("date"),
                 data.get("duration_minutes", 0),
                 data.get("notes", ""),
                 tags_json,
                 data.get("sentiment", ""),
+                data.get("audio_path", ""),
                 created_at
             ))
             conn.commit()

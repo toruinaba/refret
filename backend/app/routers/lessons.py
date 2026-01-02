@@ -10,6 +10,7 @@ import math
 
 from app.services.store import StoreService
 from app.core.config import get_settings
+from app.services.audio import AudioProcessor
 
 router = APIRouter()
 
@@ -121,13 +122,35 @@ async def upload_lesson(
     # remove None keys
     initial_metadata = {k: v for k, v in initial_metadata.items() if v is not None}
     
-    # Save Uploaded File
+    # Save Uploaded File (Raw)
     ext = Path(file.filename).suffix
-    if not ext: ext = ".mp3"
-    file_path = lesson_dir / f"original{ext}"
+    if not ext: ext = ".m4a" # Default for voice memo
+    raw_path = lesson_dir / f"original_raw{ext}"
     
-    with open(file_path, "wb") as buffer:
+    with open(raw_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+    
+    # Normalize to MP3 immediately
+    final_path = lesson_dir / "original.mp3"
+    try:
+        processor = AudioProcessor()
+        processor.convert_to_mp3(raw_path, final_path)
+    except Exception as e:
+        # Fallback or cleanup
+        print(f"Conversion failed: {e}")
+        # If conversion fails, maybe we just fail the request or try to use raw?
+        # Requirement says "Convert to original.mp3 immediately". 
+        # So we should probably error out if this fails.
+        if raw_path.exists(): raw_path.unlink()
+        # Clean folder?
+        shutil.rmtree(lesson_dir) 
+        raise HTTPException(status_code=500, detail=f"Audio normalization failed: {str(e)}")
+        
+    # Cleanup raw
+    if raw_path.exists():
+        raw_path.unlink()
+        
+    file_path = final_path
         
     # Init Status
     # Init Status

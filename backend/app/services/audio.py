@@ -138,8 +138,13 @@ class AudioProcessor:
             sf.write(str(temp_guitar_path), backing_out, model.samplerate)
             
             # Convert to MP3
-            self._convert_to_mp3(temp_vocals_path, final_vocals_path)
-            self._convert_to_mp3(temp_guitar_path, final_guitar_path)
+            # Convert to MP3
+            self.convert_to_mp3(temp_vocals_path, final_vocals_path)
+            self.convert_to_mp3(temp_guitar_path, final_guitar_path)
+
+            # Cleanup Temp Wavs
+            if temp_vocals_path.exists(): temp_vocals_path.unlink()
+            if temp_guitar_path.exists(): temp_guitar_path.unlink()
             
             return final_vocals_path, final_guitar_path
 
@@ -147,7 +152,8 @@ class AudioProcessor:
             print(f"Error in separation: {e}")
             raise e
 
-    def _convert_to_mp3(self, input_path: Path, output_path: Path):
+    def convert_to_mp3(self, input_path: Path, output_path: Path):
+        """Convert any audio file to MP3 (192k)."""
         print(f"Converting {input_path} to MP3...")
         cmd = [
             "ffmpeg", "-y",
@@ -157,8 +163,6 @@ class AudioProcessor:
             str(output_path)
         ]
         subprocess.run(cmd, check=True, capture_output=True)
-        if input_path.exists():
-            input_path.unlink()
 
     def transcribe(self, audio_path: Path):
         """Transcribe audio using Faster-Whisper."""
