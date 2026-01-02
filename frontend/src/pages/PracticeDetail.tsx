@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, Calendar, Edit2, Trash2, Plus, Save } from "lucide-react"
+import { ArrowLeft, Calendar, Edit2, Trash2, Plus, Save, Clock, Activity, Tag, FileText } from "lucide-react"
 import { api } from "../lib/api"
 import type { PracticeLog } from "../types"
 import { MultiTrackPlayer, type MultiTrackPlayerRef } from "../components/player/MultiTrackPlayer"
 import { CreateLickDialog } from "../components/licks/CreateLickDialog"
 import { TagInput } from "../components/ui/TagInput"
 import { cn } from "../lib/utils"
+import { MetadataCard, MetadataHeader, MetadataGrid, MetadataField, MetadataValue } from "../components/ui/metadata"
+import { MarkdownEditor } from "../components/ui/MarkdownEditor"
+import { MarkdownRenderer } from "../components/ui/MarkdownRenderer"
 
 export function PracticeDetail() {
     const { id } = useParams<{ id: string }>()
@@ -202,53 +205,52 @@ export function PracticeDetail() {
                     )}
 
                     {/* Content Section */}
-                    <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
-                        <div className="flex items-center gap-2 mb-4">
-                            <Calendar className="w-5 h-5 text-orange-600" />
-                            <h3 className="font-bold text-neutral-900">Notes</h3>
-                        </div>
+                    {/* Notes Area */}
+                    <MetadataCard className="h-full">
+                        <MetadataHeader icon={FileText} title="Session Notes" />
 
                         {isEditing ? (
-                            <textarea
+                            <MarkdownEditor
                                 value={editNotes}
-                                onChange={e => setEditNotes(e.target.value)}
-                                className="w-full h-48 border border-neutral-300 rounded-lg p-4 font-mono text-sm focus:ring-2 focus:ring-orange-500 outline-none"
-                                placeholder="Reflect on your practice..."
+                                onChange={setEditNotes}
+                                rows={16}
+                                placeholder="Reflect on your practice session..."
                             />
                         ) : (
-                            <div className="prose prose-sm max-w-none text-neutral-600 whitespace-pre-wrap">
-                                {log.notes || <span className="text-neutral-400 italic">No notes added.</span>}
+                            <div className="min-h-[200px]">
+                                {log.notes ? (
+                                    <MarkdownRenderer>{log.notes}</MarkdownRenderer>
+                                ) : (
+                                    <p className="text-neutral-400 italic">No notes added for this session.</p>
+                                )}
                             </div>
                         )}
-                    </div>
+                    </MetadataCard>
                 </div>
 
                 {/* Right Column: Metadata */}
                 <div className="space-y-6">
-                    <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm space-y-6">
-                        <h3 className="font-bold text-neutral-900 border-b border-neutral-100 pb-2">Details</h3>
+                    <MetadataCard>
+                        <MetadataHeader title="Details" />
 
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-xs font-bold text-neutral-400 uppercase mb-1 block">Date</label>
+                        <MetadataGrid>
+                            <MetadataField label={<><Calendar className="w-3 h-3" /> Date</>}>
                                 {isEditing ? (
                                     <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className="w-full border border-neutral-300 rounded px-2 py-1.5 text-sm" />
                                 ) : (
-                                    <div className="font-mono text-neutral-700">{log.date}</div>
+                                    <MetadataValue mono>{log.date}</MetadataValue>
                                 )}
-                            </div>
+                            </MetadataField>
 
-                            <div>
-                                <label className="text-xs font-bold text-neutral-400 uppercase mb-1 block">Duration</label>
+                            <MetadataField label={<><Clock className="w-3 h-3" /> Duration</>}>
                                 {isEditing ? (
                                     <input type="number" value={editDuration} onChange={e => setEditDuration(Number(e.target.value))} className="w-full border border-neutral-300 rounded px-2 py-1.5 text-sm" />
                                 ) : (
-                                    <div className="font-mono text-neutral-700">{log.duration_minutes} min</div>
+                                    <MetadataValue mono>{log.duration_minutes} min</MetadataValue>
                                 )}
-                            </div>
+                            </MetadataField>
 
-                            <div>
-                                <label className="text-xs font-bold text-neutral-400 uppercase mb-1 block">Sentiment</label>
+                            <MetadataField label={<><Activity className="w-3 h-3" /> Sentiment</>}>
                                 {isEditing ? (
                                     <select value={editSentiment} onChange={e => setEditSentiment(e.target.value)} className="w-full border border-neutral-300 rounded px-2 py-1.5 text-sm">
                                         <option value="">Select...</option>
@@ -258,12 +260,11 @@ export function PracticeDetail() {
                                         <option value="Tired">😴 Tired</option>
                                     </select>
                                 ) : (
-                                    <div className="font-mono text-neutral-700">{log.sentiment || "--"}</div>
+                                    <MetadataValue mono>{log.sentiment || "--"}</MetadataValue>
                                 )}
-                            </div>
+                            </MetadataField>
 
-                            <div>
-                                <label className="text-xs font-bold text-neutral-400 uppercase mb-1 block">Tags</label>
+                            <MetadataField label={<><Tag className="w-3 h-3" /> Tags</>}>
                                 {isEditing ? (
                                     <TagInput value={editTags} onChange={setEditTags} placeholder="tags..." />
                                 ) : (
@@ -273,11 +274,14 @@ export function PracticeDetail() {
                                         )) : <span className="text-neutral-400 text-sm">--</span>}
                                     </div>
                                 )}
-                            </div>
-                        </div>
-
-
-                    </div>
+                            </MetadataField>
+                        </MetadataGrid>
+                        {isEditing && (
+                            <button onClick={handleSave} className="w-full bg-orange-600 text-white font-bold py-2 rounded-lg hover:bg-orange-700 transition-colors mt-4">
+                                Save Changes
+                            </button>
+                        )}
+                    </MetadataCard>
                 </div>
             </div>
 

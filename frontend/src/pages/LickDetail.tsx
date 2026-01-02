@@ -8,6 +8,7 @@ import { TagInput } from "../components/ui/TagInput"
 import { MarkdownEditor } from "../components/ui/MarkdownEditor"
 import { MarkdownRenderer } from "../components/ui/MarkdownRenderer"
 import { AbcRenderer } from "../components/ui/AbcRenderer"
+import { MetadataCard, MetadataHeader, MetadataGrid, MetadataField, MetadataValue } from "../components/ui/metadata"
 
 export function LickDetail() {
     const { id } = useParams<{ id: string }>()
@@ -185,11 +186,8 @@ export function LickDetail() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="md:col-span-2 space-y-4">
                     {/* Score Card */}
-                    <div className="bg-white p-6 rounded-lg border border-neutral-200 shadow-sm">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="flex items-center gap-2 font-semibold text-neutral-900">
-                                <Music className="w-4 h-4" /> Score / Tab
-                            </h3>
+                    <MetadataCard>
+                        <MetadataHeader icon={Music} title="Score / Tab">
                             {isEditing && lick.lesson_id && (
                                 <button
                                     onClick={handleTranscribe}
@@ -199,7 +197,7 @@ export function LickDetail() {
                                     <Wand2 className="w-3 h-3" /> {transcribing ? "Transcribing..." : "Auto Transcribe"}
                                 </button>
                             )}
-                        </div>
+                        </MetadataHeader>
 
                         {isEditing ? (
                             <div className="space-y-2">
@@ -220,12 +218,10 @@ export function LickDetail() {
                                 )}
                             </div>
                         )}
-                    </div>
+                    </MetadataCard>
 
-                    <div className="bg-white p-6 rounded-lg border border-neutral-200 shadow-sm">
-                        <h3 className="flex items-center gap-2 font-semibold text-neutral-900 mb-4">
-                            <FileText className="w-4 h-4" /> Memo
-                        </h3>
+                    <MetadataCard>
+                        <MetadataHeader icon={FileText} title="Memo" />
                         {isEditing ? (
                             <MarkdownEditor
                                 value={editMemo}
@@ -238,40 +234,36 @@ export function LickDetail() {
                                 {lick.memo ? <MarkdownRenderer>{lick.memo}</MarkdownRenderer> : <p className="italic text-neutral-400">No memo available.</p>}
                             </div>
                         )}
-                    </div>
+                    </MetadataCard>
                 </div>
 
                 <div className="space-y-4">
-                    <div className="bg-white p-6 rounded-lg border border-neutral-200 shadow-sm space-y-4">
-                        <div>
-                            <h4 className="text-xs font-semibold text-neutral-500 uppercase flex items-center gap-2 mb-2">
-                                <Clock className="w-3 h-3" /> Timestamp
-                            </h4>
-                            <p className="text-sm font-mono text-neutral-900">
-                                {lick.start.toFixed(2)}s - {lick.end.toFixed(2)}s
-                            </p>
-                        </div>
-                        <div>
-                            <h4 className="text-xs font-semibold text-neutral-500 uppercase flex items-center gap-2 mb-2">
-                                <Tag className="w-3 h-3" /> Tags
-                            </h4>
-                            {isEditing ? (
-                                <TagInput
-                                    value={editTags}
-                                    onChange={setEditTags}
-                                    placeholder="Add tag..."
-                                />
-                            ) : (
-                                <div className="flex flex-wrap gap-2">
-                                    {lick.tags && lick.tags.length > 0 ? lick.tags.map(tag => (
-                                        <span key={tag} className="px-2 py-1 bg-neutral-100 rounded text-xs text-neutral-700">
-                                            {tag}
-                                        </span>
-                                    )) : <span className="text-sm text-neutral-400">No tags</span>}
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                    <MetadataCard>
+                        <MetadataGrid>
+                            <MetadataField label={<><Clock className="w-3 h-3" /> Timestamp</>}>
+                                <MetadataValue mono>
+                                    {lick.start.toFixed(2)}s - {lick.end.toFixed(2)}s
+                                </MetadataValue>
+                            </MetadataField>
+                            <MetadataField label={<><Tag className="w-3 h-3" /> Tags</>}>
+                                {isEditing ? (
+                                    <TagInput
+                                        value={editTags}
+                                        onChange={setEditTags}
+                                        placeholder="Add tag..."
+                                    />
+                                ) : (
+                                    <div className="flex flex-wrap gap-2">
+                                        {lick.tags && lick.tags.length > 0 ? lick.tags.map(tag => (
+                                            <span key={tag} className="px-2 py-1 bg-neutral-100 rounded text-xs text-neutral-700">
+                                                {tag}
+                                            </span>
+                                        )) : <span className="text-sm text-neutral-400">No tags</span>}
+                                    </div>
+                                )}
+                            </MetadataField>
+                        </MetadataGrid>
+                    </MetadataCard>
                 </div>
             </div>
         </div>

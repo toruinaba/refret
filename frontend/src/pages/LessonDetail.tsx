@@ -8,6 +8,7 @@ import type { LessonDetail as LessonDetailType } from "../types"
 import { TagInput } from "../components/ui/TagInput"
 import { MarkdownEditor } from "../components/ui/MarkdownEditor"
 import { MarkdownRenderer } from '../components/ui/MarkdownRenderer'
+import { MetadataCard, MetadataHeader, MetadataGrid, MetadataField, MetadataValue } from "../components/ui/metadata"
 
 
 export function LessonDetail() {
@@ -385,18 +386,12 @@ export function LessonDetail() {
 
                     {/* Lesson Metadata (View/Edit) */}
                     {lesson && (
-                        <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm animate-in slide-in-from-bottom-8 duration-700">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="font-semibold text-lg flex items-center gap-2">
-                                    <FileText className="w-5 h-5 text-orange-600" />
-                                    Metadata & Notes
-                                </h3>
-                            </div>
+                        <MetadataCard className="animate-in slide-in-from-bottom-8 duration-700">
+                            <MetadataHeader icon={FileText} title="Metadata & Notes" />
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 <div className="md:col-span-2 space-y-4">
-                                    <div>
-                                        <label className="text-xs font-semibold text-neutral-500 uppercase mb-2 block">Memo</label>
+                                    <MetadataField label="Memo">
                                         {isEditing ? (
                                             <MarkdownEditor
                                                 value={editMemo}
@@ -409,14 +404,11 @@ export function LessonDetail() {
                                                 {lesson.memo ? <MarkdownRenderer>{lesson.memo}</MarkdownRenderer> : <p className="italic text-neutral-400">No memo available.</p>}
                                             </div>
                                         )}
-                                    </div>
+                                    </MetadataField>
                                 </div>
 
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="text-xs font-semibold text-neutral-500 uppercase flex items-center gap-2 mb-2">
-                                            <Tag className="w-3 h-3" /> Tags
-                                        </label>
+                                <MetadataGrid>
+                                    <MetadataField label={<><Tag className="w-3 h-3" /> Tags</>}>
                                         {isEditing ? (
                                             <TagInput
                                                 value={editTags}
@@ -432,18 +424,15 @@ export function LessonDetail() {
                                                 )) : <span className="text-sm text-neutral-400">No tags</span>}
                                             </div>
                                         )}
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-semibold text-neutral-500 uppercase flex items-center gap-2 mb-2">
-                                            <Calendar className="w-3 h-3" /> Created
-                                        </label>
-                                        <p className="text-sm font-mono text-neutral-900 bg-neutral-50 px-3 py-2 rounded-lg border border-neutral-200">
+                                    </MetadataField>
+                                    <MetadataField label={<><Calendar className="w-3 h-3" /> Created</>}>
+                                        <MetadataValue mono className="bg-neutral-50 px-3 py-2 rounded-lg border border-neutral-200 inline-block">
                                             {lesson.created_at || "Unknown"}
-                                        </p>
-                                    </div>
-                                </div>
+                                        </MetadataValue>
+                                    </MetadataField>
+                                </MetadataGrid>
                             </div>
-                        </div>
+                        </MetadataCard>
                     )}
                 </div>
             </div>
