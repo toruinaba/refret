@@ -21,6 +21,7 @@ interface TransportControlsProps extends HTMLAttributes<HTMLDivElement> {
     onClearSelection: () => void;
     onSkipStart: () => void;
     onSkipEnd: () => void;
+    showMixer?: boolean;
 }
 
 export function TransportControls({
@@ -43,6 +44,7 @@ export function TransportControls({
     onClearSelection,
     onSkipStart,
     onSkipEnd,
+    showMixer = true,
     ...props
 }: TransportControlsProps) {
 
@@ -142,26 +144,28 @@ export function TransportControls({
 
             {/* Group 3: Tracks & Time */}
             <div className="flex items-center justify-between sm:justify-start gap-4 w-full sm:w-auto border-t border-neutral-800 pt-3 sm:border-0 sm:pt-0 sm:ml-auto">
-                <div className="flex gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer text-xs">
-                        <input
-                            type="checkbox"
-                            checked={!vocalsMuted}
-                            onChange={(e) => onVocalsMuteChange(!e.target.checked)}
-                            className="accent-purple-500"
-                        />
-                        Vocals
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer text-xs">
-                        <input
-                            type="checkbox"
-                            checked={!guitarMuted}
-                            onChange={(e) => onGuitarMuteChange(!e.target.checked)}
-                            className="accent-orange-500"
-                        />
-                        Guitar
-                    </label>
-                </div>
+                {showMixer && (
+                    <div className="flex gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer text-xs">
+                            <input
+                                type="checkbox"
+                                checked={!vocalsMuted}
+                                onChange={(e) => onVocalsMuteChange(!e.target.checked)}
+                                className="accent-purple-500"
+                            />
+                            Vocals
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer text-xs">
+                            <input
+                                type="checkbox"
+                                checked={!guitarMuted}
+                                onChange={(e) => onGuitarMuteChange(!e.target.checked)}
+                                className="accent-orange-500"
+                            />
+                            Guitar
+                        </label>
+                    </div>
+                )}
 
                 <div className="font-mono text-sm text-neutral-400 sm:hidden lg:block">
                     {formatTime(currentTime)} / {formatTime(totalTime)}

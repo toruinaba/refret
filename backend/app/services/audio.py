@@ -264,3 +264,84 @@ class AudioProcessor:
         # Save summary
         with open(lesson_dir / "summary.json", "w") as f:
             json.dump(summary_json, f, indent=2)
+
+    def analyze_audio(self, audio_path: Path) -> dict:
+        """
+        Analyze audio for musical properties (BPM, Key) using Librosa.
+        Returns dict with analysis data.
+        """
+        print(f"Analyzing audio: {audio_path}")
+        try:
+            import librosa
+            import numpy as np
+            
+            # Load audio (mono for analysis)
+            y, sr = librosa.load(str(audio_path), sr=None)
+            
+            # 1. BPM Detection
+            onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+            tempo, _ = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)
+            
+            # 2. Key Detection
+            # Extract Chroma features
+            chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+            
+            # Simple heuristic for key: 
+            # Sum chroma over time -> dominant pitch class
+            # This is very basic. For major/minor, we'd need template matching.
+            # Let's try to detect Major/Minor using correlation with templates if possible, 
+            # or just return the dominant pitch class for now.
+            
+            # Key templates
+            # Major: [1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1] (C Major relative intervals)
+            # Minor: [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0] (C Minor relative intervals)
+            
+            chroma_sum = np.sum(chroma, axis=1)
+            
+            # Normalize
+            chroma_sum /= np.max(chroma_sum)
+            
+            # Templates for 12 pitches (C, C#, D...)
+            # We shift the templates to match each pitch class
+            # ... Actually let's use a simpler library approach if available? 
+            # music21 is in requirements, but librosa is loaded.
+            # Let's write a simple template matcher.
+            
+            major_profile = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+            minor_profile = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+            
+            # Standardize profiles
+            major_profile /= np.max(major_profile)
+            minor_profile /= np.max(minor_profile)
+            
+            pitches = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+            
+            best_correlation = -1
+            detected_key = "Unknown"
+            
+            for i in range(12):
+                # Roll profiles to check each tonic
+                major_rolled = np.roll(major_profile, i)
+                minor_rolled = np.roll(minor_profile, i)
+                
+                # Correlate
+                corr_major = np.corrcoef(chroma_sum, major_rolled)[0, 1]
+                corr_minor = np.corrcoef(chroma_sum, minor_rolled)[0, 1]
+                
+                if corr_major > best_correlation:
+                    best_correlation = corr_major
+                    detected_key = f"{pitches[i]} Major"
+                    
+                if corr_minor > best_correlation:
+                    best_correlation = corr_minor
+                    detected_key = f"{pitches[i]} Minor"
+
+            return {
+                "bpm": float(tempo),
+                "key": detected_key,
+                "duration": librosa.get_duration(y=y, sr=sr)
+            }
+            
+        except Exception as e:
+            print(f"Analysis failed: {e}")
+            return {"error": str(e), "bpm": 0, "key": "Unknown"}

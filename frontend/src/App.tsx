@@ -3,6 +3,8 @@ import { Guitar, Music, Upload as UploadIcon, Settings as SettingsIcon, LayoutDa
 import { Home } from './pages/Home'
 import { Dashboard } from './pages/Dashboard'
 import { LessonDetail } from './pages/LessonDetail'
+import { PracticeLogList } from './pages/PracticeLogList'
+import { PracticeDetail } from './pages/PracticeDetail'
 import { LickLibrary } from './pages/LickLibrary'
 import { LickDetail } from './pages/LickDetail'
 import { Upload } from './pages/Upload'
@@ -33,7 +35,11 @@ function App() {
             </Link>
             <Link to="/lessons" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-medium transition-colors">
               <BookOpen className="w-4 h-4" />
-              <span className="hidden sm:inline">Library</span>
+              <span className="hidden sm:inline">Lessons</span>
+            </Link>
+            <Link to="/practice" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-medium transition-colors">
+              <Guitar className="w-4 h-4" />
+              <span className="hidden sm:inline">Practice</span>
             </Link>
             <Link to="/licks" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-medium transition-colors">
               <Music className="w-4 h-4" />
@@ -55,6 +61,8 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/lessons" element={<Home />} />
           <Route path="/lesson/:id" element={<LessonDetail />} />
+          <Route path="/practice" element={<PracticeLogList />} />
+          <Route path="/practice/:id" element={<PracticeDetail />} />
           <Route path="/licks" element={<LickLibrary />} />
           <Route path="/lick/:id" element={<LickDetail />} />
           <Route path="/upload" element={<Upload />} />

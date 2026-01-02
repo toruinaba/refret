@@ -26,6 +26,7 @@ class LogResponse(LogBase):
     id: int
     audio_path: Optional[str] = None
     created_at: str
+    analysis: Optional[dict] = None
 
 class StatsResponse(BaseModel):
     heatmap: List[Any]
@@ -55,10 +56,32 @@ async def get_stats(db: DatabaseService = Depends(get_db)):
 
 @router.get("/{id}", response_model=LogResponse)
 async def get_log(id: int, db: DatabaseService = Depends(get_db)):
-    """Get a single log."""
+    """Get a single log with analysis data."""
     log = db.get_log(id)
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
+        
+    # Inject Analysis if available
+    if log.get("audio_path"):
+        from app.core.config import get_settings
+        from pathlib import Path
+        import json
+        
+        data_dir = Path(get_settings().DATA_DIR)
+        # audio_path is "practice/{file_id}.mp3"
+        # Analysis is "practice/{file_id}_analysis.json"
+        
+        try:
+            audio_p = Path(log["audio_path"])
+            stem = audio_p.stem # file_id
+            analysis_path = data_dir / "practice" / f"{stem}_analysis.json"
+            
+            if analysis_path.exists():
+                with open(analysis_path, "r") as f:
+                   log["analysis"] = json.load(f)
+        except Exception as e:
+            print(f"Failed to load analysis for log {id}: {e}")
+            
     return log
 
 @router.put("/{id}", response_model=LogResponse)
@@ -76,6 +99,37 @@ async def delete_log(id: int, db: DatabaseService = Depends(get_db)):
     if not success:
         raise HTTPException(status_code=404, detail="Log not found")
     return {"status": "deleted", "id": id}
+
+@router.get("/{id}/audio")
+async def get_practice_audio(id: int, db: DatabaseService = Depends(get_db)):
+    """Stream practice log audio."""
+    from fastapi.responses import FileResponse
+    from pathlib import Path
+
+    log = db.get_log(id)
+    if not log or not log.get("audio_path"):
+        raise HTTPException(status_code=404, detail="Audio not found")
+        
+    store_dir = db.get_connection().execute("SELECT value FROM settings WHERE key='DATA_DIR'").fetchone() 
+    # Wait, DatabaseService doesn't expose data_dir easily?
+    # Actually DatabaseService in line 14 initializes self.db_path from settings.DATA_DIR.
+    # The `audio_path` saved in DB is relative: `practice/{file_id}.mp3`.
+    # I need absolute path.
+    # I can use `app.core.config.get_settings().DATA_DIR`.
+    
+    from app.core.config import get_settings
+    data_dir = Path(get_settings().DATA_DIR)
+    
+    file_path = data_dir / log["audio_path"]
+    
+    if not file_path.exists():
+         raise HTTPException(status_code=404, detail="Audio file missing")
+         
+    return FileResponse(
+        path=file_path,
+        media_type="audio/mpeg",
+        filename=f"practice_{id}.mp3"
+    )
 
 @router.post("/upload", response_model=LogResponse)
 async def upload_practice_log(
@@ -143,18 +197,17 @@ async def upload_practice_log(
         "notes": notes,
         "tags": parsed_tags,
         "sentiment": sentiment,
-        "_audio_path": audio_path # Note: DB needs this column populated. create_log takes dict. 
-        # But wait, create_log in database.py explicitly maps fields. I need to update create_log too.
-        # Let's assume I updated create_log? I didn't update the METHOD, only the schema.
-        # I need to update create_log to accept audio_path.
+        "_audio_path": audio_path 
     }
     
-    # TODO: Update DB method to handle audio_path. For now I'll inject it manually via raw SQL or update methods.
-    # Ah, I should update database.py methods first/concurrently.
-    
-    # Let's invoke a specialized method or update create_log. 
-    # For now, let's call create_log and then update it with raw SQL or update existing method logic.
-    # Updating database.py logic is cleaner.
-    
     log_id = db.create_log({**log_data, "audio_path": audio_path})
+
+    # Run Analysis (Inline for now - could be background task)
+    try:
+        analysis = processor.analyze_audio(final_path)
+        with open(practice_dir / f"{file_id}_analysis.json", "w") as f:
+            json.dump(analysis, f)
+    except Exception as e:
+        print(f"Analysis failed during upload: {e}")
+
     return db.get_log(log_id)

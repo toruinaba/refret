@@ -116,7 +116,11 @@ export function LickDetail() {
                     <div className="flex-1">
                         <div className="flex items-center gap-2 text-neutral-500 text-sm mb-1">
                             <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded text-xs font-semibold">Lick</span>
-                            <span>From Lesson: <Link to={`/lesson/${lick.lesson_id}`} className="hover:underline text-orange-600">{lick.lesson_id}</Link></span>
+                            {lick.lesson_id ? (
+                                <span>From Lesson: <Link to={`/lesson/${lick.lesson_id}`} className="hover:underline text-orange-600">{lick.lesson_id}</Link></span>
+                            ) : lick.practice_log_id ? (
+                                <span>From Practice: <Link to={`/practice/${lick.practice_log_id}`} className="hover:underline text-orange-600">Log #{lick.practice_log_id}</Link></span>
+                            ) : null}
                         </div>
                         {isEditing ? (
                             <input
@@ -163,7 +167,9 @@ export function LickDetail() {
             {/* Player (Unchanged) */}
             <div className="bg-neutral-50 p-6 rounded-xl border border-neutral-200">
                 <MultiTrackPlayer
-                    lessonId={lick.lesson_id!}
+                    lessonId={lick.lesson_id}
+                    audioUrl={lick.source_audio_url}
+                    mode={lick.practice_log_id ? "single" : "lesson"}
                     initialRegion={{ start: lick.start, end: lick.end }}
                     initialVocalsMuted={true}
                 />
@@ -178,7 +184,7 @@ export function LickDetail() {
                             <h3 className="flex items-center gap-2 font-semibold text-neutral-900">
                                 <Music className="w-4 h-4" /> Score / Tab
                             </h3>
-                            {isEditing && (
+                            {isEditing && lick.lesson_id && (
                                 <button
                                     onClick={handleTranscribe}
                                     disabled={transcribing}

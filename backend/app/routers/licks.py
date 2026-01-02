@@ -12,13 +12,17 @@ def get_store():
 
 # --- Pydantic Models for Validation ---
 class LickCreate(BaseModel):
-    lesson_dir: str # Maps to lesson directory name (ID)
+    lesson_id: Optional[str] = None # Was lesson_dir
+    practice_log_id: Optional[int] = None
     title: str
     tags: List[str] = []
     start: float
     end: float
     memo: str = ""
     abc_score: str = ""
+    
+    # Backward compatibility for frontend still sending lesson_dir
+    lesson_dir: Optional[str] = None 
 
 class LickUpdate(BaseModel):
     title: Optional[str] = None
@@ -34,6 +38,7 @@ async def list_licks(
     limit: int = 50,
     tags: str = None,
     lesson_id: str = None,
+    practice_log_id: int = None,
     date_from: str = None,
     date_to: str = None,
     store: StoreService = Depends(get_store)
@@ -49,7 +54,8 @@ async def list_licks(
         tags=tag_list,
         date_from=date_from,
         date_to=date_to,
-        lesson_id=lesson_id
+        lesson_id=lesson_id,
+        practice_log_id=practice_log_id
     )
 
     return {
@@ -66,9 +72,16 @@ async def create_lick(lick: LickCreate, store: StoreService = Depends(get_store)
     # Convert Pydantic model to dict
     data = lick.model_dump()
     
-    # fix legacy key: Frontend sends 'lesson_dir' but DB expects 'lesson_id'
-    if "lesson_dir" in data:
+    # Handle legacy lesson_dir -> lesson_id mapping if lesson_id missing
+    if data.get("lesson_dir") and not data.get("lesson_id"):
         data["lesson_id"] = data.pop("lesson_dir")
+    else:
+        # Just remove legacy field if it exists
+        data.pop("lesson_dir", None)
+        
+    # Validation: Must have either lesson_id or practice_log_id
+    if not data.get("lesson_id") and not data.get("practice_log_id"):
+        raise HTTPException(status_code=400, detail="Must provide either lesson_id or practice_log_id")
         
     # Save (store service handles ID generation)
     saved = store.save_lick(data)

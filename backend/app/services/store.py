@@ -127,9 +127,10 @@ class StoreService:
         tags: List[str] = None,
         date_from: str = None,
         date_to: str = None,
-        lesson_id: str = None
+        lesson_id: str = None,
+        practice_log_id: int = None
     ) -> Tuple[List[Dict[str, Any]], int]:
-        return self.db.list_licks(page, limit, tags, lesson_id, date_from, date_to)
+        return self.db.list_licks(page, limit, tags, lesson_id, practice_log_id, date_from, date_to)
 
     def save_lick(self, lick_data: Dict[str, Any]):
         # Ensure ID and timestamps

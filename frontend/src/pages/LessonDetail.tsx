@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, Plus, X, FileText, Tag, Calendar, PlayCircle, ChevronDown, ChevronRight, Music, Trash2, RefreshCw, Sparkles, Layers, Mic, Loader2 } from "lucide-react"
+import { ArrowLeft, Plus, FileText, Tag, Calendar, PlayCircle, ChevronDown, ChevronRight, Music, Trash2, RefreshCw, Sparkles, Layers, Mic } from "lucide-react"
+import { CreateLickDialog } from "../components/licks/CreateLickDialog"
 import { MultiTrackPlayer, type MultiTrackPlayerRef } from "../components/player/MultiTrackPlayer"
 import { api } from "../lib/api"
 import type { LessonDetail as LessonDetailType } from "../types"
@@ -27,12 +28,7 @@ export function LessonDetail() {
     const [editTags, setEditTags] = useState<string[]>([])
     const [editMemo, setEditMemo] = useState("")
 
-
-    // Form State (for new Lick)
-    const [createTitle, setCreateTitle] = useState("")
-    const [createTags, setCreateTags] = useState("")
-    const [createMemo, setCreateMemo] = useState("")
-    const [submitting, setSubmitting] = useState(false)
+    // Processing State
     const [processingTask, setProcessingTask] = useState<string | null>(null)
     const [processingProgress, setProcessingProgress] = useState(0)
     const [processingMessage, setProcessingMessage] = useState("")
@@ -137,28 +133,22 @@ export function LessonDetail() {
         }
     }
 
-    const handleSaveLick = async () => {
+    const handleSaveLick = async (title: string, tags: string[], memo: string) => {
         if (!id || !selection) return;
         try {
-            setSubmitting(true)
             await api.createLick({
                 lesson_id: id,
-                title: createTitle || "New Lick",
-                tags: createTags.split(",").map(t => t.trim()).filter(Boolean),
-                memo: createMemo,
+                title: title,
+                tags: tags,
+                memo: memo,
                 start: selection.start,
                 end: selection.end
             })
             alert("Lick saved!")
             setIsCreating(false)
-            setCreateTitle("")
-            setCreateTags("")
-            setCreateMemo("")
         } catch (e) {
             console.error(e)
             alert("Failed to save lick")
-        } finally {
-            setSubmitting(false)
         }
     }
 
@@ -166,8 +156,8 @@ export function LessonDetail() {
 
     return (
         <div className="space-y-6 pb-20">
-            {processingTask === 'initial' && (
-                <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center p-8 space-y-6 animate-in fade-in">
+            {processingTask && (
+                <div className="fixed inset-0 bg-white/95 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-8 space-y-6 animate-in fade-in duration-300">
                     <div className="relative">
                         <div className="w-16 h-16 border-4 border-neutral-100 border-t-orange-500 rounded-full animate-spin"></div>
                         <div className="absolute inset-0 flex items-center justify-center">
@@ -175,10 +165,14 @@ export function LessonDetail() {
                         </div>
                     </div>
                     <div className="text-center space-y-2">
-                        <h2 className="text-xl font-bold text-neutral-900">Processing Lesson...</h2>
+                        <h2 className="text-xl font-bold text-neutral-900">
+                            {processingTask === 'initial' && "Processing Lesson..."}
+                            {processingTask === 'separate' && "Separating Audio Tracks..."}
+                            {processingTask === 'transcribe' && "Transcribing Audio..."}
+                            {processingTask === 'summarize' && "Generating Summary..."}
+                        </h2>
                         <p className="text-neutral-500 max-w-md">
-                            We're analyzing audio, separating tracks, and generating transcriptions.
-                            This usually takes a few minutes.
+                            Please wait while we process your request. Do not close this page.
                         </p>
                         <p className="text-sm font-mono bg-neutral-50 px-3 py-1 rounded inline-block text-neutral-600">
                             {processingMessage || "Initializing..."}
@@ -245,44 +239,29 @@ export function LessonDetail() {
                                         <Sparkles className="w-3.5 h-3.5" /> AI Tools
                                     </h3>
 
-                                    {processingTask ? (
-                                        <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200 space-y-2">
-                                            <div className="flex items-center gap-2 text-sm font-medium text-neutral-700">
-                                                <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
-                                                <span className="truncate">{processingMessage || "Processing..."}</span>
-                                            </div>
-                                            <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden w-full">
-                                                <div
-                                                    className="h-full bg-orange-500 transition-all duration-500"
-                                                    style={{ width: `${Math.max(5, processingProgress * 100)}%` }}
-                                                />
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-1">
-                                            <button
-                                                onClick={() => handleReprocess('separate')}
-                                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 rounded-lg border border-transparent hover:border-neutral-200 transition-all text-left"
-                                            >
-                                                <Layers className="w-4 h-4 text-blue-500" />
-                                                Redo Audio Separation
-                                            </button>
-                                            <button
-                                                onClick={() => handleReprocess('transcribe')}
-                                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 rounded-lg border border-transparent hover:border-neutral-200 transition-all text-left"
-                                            >
-                                                <Mic className="w-4 h-4 text-red-500" />
-                                                Redo Transcription
-                                            </button>
-                                            <button
-                                                onClick={() => handleReprocess('summarize')}
-                                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 rounded-lg border border-transparent hover:border-neutral-200 transition-all text-left"
-                                            >
-                                                <RefreshCw className="w-4 h-4 text-green-500" />
-                                                Redo Summary
-                                            </button>
-                                        </div>
-                                    )}
+                                    <div className="space-y-1">
+                                        <button
+                                            onClick={() => handleReprocess('separate')}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 rounded-lg border border-transparent hover:border-neutral-200 transition-all text-left"
+                                        >
+                                            <Layers className="w-4 h-4 text-blue-500" />
+                                            Redo Audio Separation
+                                        </button>
+                                        <button
+                                            onClick={() => handleReprocess('transcribe')}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 rounded-lg border border-transparent hover:border-neutral-200 transition-all text-left"
+                                        >
+                                            <Mic className="w-4 h-4 text-red-500" />
+                                            Redo Transcription
+                                        </button>
+                                        <button
+                                            onClick={() => handleReprocess('summarize')}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 rounded-lg border border-transparent hover:border-neutral-200 transition-all text-left"
+                                        >
+                                            <RefreshCw className="w-4 h-4 text-green-500" />
+                                            Redo Summary
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -439,58 +418,13 @@ export function LessonDetail() {
                 </div>
             </div>
 
-            {/* Creation Modal/Overlay */}
-            {isCreating && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4 animate-in zoom-in-95">
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-lg font-bold">Save New Lick</h2>
-                            <button onClick={() => setIsCreating(false)}><X className="w-5 h-5 text-neutral-400 hover:text-neutral-600" /></button>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-neutral-700 mb-1">Title</label>
-                                <input
-                                    value={createTitle} onChange={e => setCreateTitle(e.target.value)}
-                                    className="w-full border border-neutral-300 rounded-md px-3 py-2"
-                                    placeholder="Awesome Lick"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-neutral-700 mb-1">Tags (comma separated)</label>
-                                <input
-                                    value={createTags} onChange={e => setCreateTags(e.target.value)}
-                                    className="w-full border border-neutral-300 rounded-md px-3 py-2"
-                                    placeholder="blues, slow, bend"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-neutral-700 mb-1">Memo</label>
-                                <textarea
-                                    value={createMemo} onChange={e => setCreateMemo(e.target.value)}
-                                    className="w-full border border-neutral-300 rounded-md px-3 py-2 h-24"
-                                    placeholder="Notes about fingering, difficulty etc."
-                                />
-                            </div>
-
-                            <div className="text-xs text-neutral-500 bg-neutral-100 p-2 rounded">
-                                Range: {selection?.start.toFixed(2)}s - {selection?.end.toFixed(2)}s
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end gap-3 pt-4">
-                            <button onClick={() => setIsCreating(false)} className="px-4 py-2 text-neutral-600 hover:bg-neutral-100 rounded-lg">Cancel</button>
-                            <button
-                                onClick={handleSaveLick} disabled={submitting}
-                                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
-                            >
-                                {submitting ? "Saving..." : "Save Lick"}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Creation Modal */}
+            <CreateLickDialog
+                isOpen={isCreating}
+                onClose={() => setIsCreating(false)}
+                onSave={handleSaveLick}
+                selection={selection}
+            />
         </div>
     )
 }

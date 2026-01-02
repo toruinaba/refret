@@ -159,6 +159,11 @@ export const api = {
         return res.data;
     },
 
+    getLog: async (id: number): Promise<PracticeLog> => {
+        const res = await client.get(`/journal/${id}`);
+        return res.data;
+    },
+
     createLog: async (data: Partial<PracticeLog>): Promise<PracticeLog> => {
         const res = await client.post('/journal', data);
         return res.data;

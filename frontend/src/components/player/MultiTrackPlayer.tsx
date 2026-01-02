@@ -6,7 +6,11 @@ import { api } from "../../lib/api"
 import { cn } from "../../lib/utils"
 
 interface MultiTrackPlayerProps {
-    lessonId: string;
+    lessonId?: string; // Optional now
+    audioUrl?: string; // For single mode
+    mode?: 'lesson' | 'single';
+    analysisData?: { bpm: number; key: string };
+
     initialRegion?: { start: number, end: number };
     onSelectionChange?: (region: { start: number, end: number } | null) => void;
     className?: string;
@@ -18,7 +22,17 @@ export interface MultiTrackPlayerRef {
     seekTo: (time: number) => void;
 }
 
-export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayerProps>(({ lessonId, initialRegion, onSelectionChange, className, autoPlay = false, initialVocalsMuted = false }, ref) => {
+export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayerProps>(({
+    lessonId,
+    audioUrl,
+    mode = 'lesson',
+    analysisData,
+    initialRegion,
+    onSelectionChange,
+    className,
+    autoPlay = false,
+    initialVocalsMuted = false
+}, ref) => {
     // Container Refs
     const containerV = useRef<HTMLDivElement>(null)
     const containerG = useRef<HTMLDivElement>(null)
@@ -49,11 +63,10 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
     useImperativeHandle(ref, () => ({
         seekTo: (time: number) => {
             const duration = wsG.current?.getDuration() || 0;
-            console.log(`[MultiTrackPlayer] seekTo: ${time}s (Duration: ${duration}s, Ready: ${isReady})`);
+            // console.log(`[MultiTrackPlayer] seekTo: ${time}s (Duration: ${duration}s, Ready: ${isReady})`);
 
             if (isReady && duration > 0) {
                 const progress = time / duration;
-                // Clamp progress
                 const p = Math.max(0, Math.min(1, progress));
 
                 wsG.current?.seekTo(p);
@@ -69,39 +82,54 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
 
     // --- Initialization ---
     useEffect(() => {
-        if (!containerV.current || !containerG.current) return;
+        // Validation
+        if (mode === 'lesson' && !lessonId) return;
+        if (mode === 'single' && !audioUrl) return;
+        if (!containerG.current) return;
+        if (mode === 'lesson' && !containerV.current) return;
 
-        // 1. Create Vocals
-        wsV.current = WaveSurfer.create({
-            container: containerV.current,
-            waveColor: '#A855F7',
-            progressColor: '#7E22CE',
-            cursorColor: '#7E22CE',
-            barWidth: 2,
-            barGap: 1,
-            barRadius: 2,
-            height: 70,
-            normalize: true,
-            minPxPerSec: zoom,
-            interact: false, // Slave track interacts via Master
-        });
-        if (wsV.current.getMediaElement()) {
-            wsV.current.getMediaElement().autoplay = false;
+        // Cleanup previous
+        if (wsG.current) wsG.current.destroy();
+        if (wsV.current) wsV.current.destroy();
+        setIsReady(false);
+
+        // 1. Create Vocals (Only for Lesson Mode)
+        if (mode === 'lesson' && containerV.current) {
+            wsV.current = WaveSurfer.create({
+                container: containerV.current,
+                waveColor: '#A855F7',
+                progressColor: '#7E22CE',
+                cursorColor: '#7E22CE',
+                barWidth: 2,
+                barGap: 1,
+                barRadius: 2,
+                height: 70,
+                normalize: true,
+                minPxPerSec: zoom,
+                interact: false, // Slave track
+            });
+            if (wsV.current.getMediaElement()) {
+                wsV.current.getMediaElement().autoplay = false;
+            }
         }
 
-        // 2. Create Guitar (Master)
+        // 2. Create Master Track (Guitar or Single Log)
         const regions = RegionsPlugin.create()
         regionsG.current = regions
 
+        // Color theme based on mode
+        const waveColor = mode === 'lesson' ? '#F97316' : '#14b8a6'; // Orange / Teal
+        const progressColor = mode === 'lesson' ? '#C2410C' : '#0d9488';
+
         wsG.current = WaveSurfer.create({
             container: containerG.current,
-            waveColor: '#F97316',
-            progressColor: '#C2410C',
-            cursorColor: '#C2410C',
+            waveColor: waveColor,
+            progressColor: progressColor,
+            cursorColor: progressColor,
             barWidth: 2,
             barGap: 1,
             barRadius: 2,
-            height: 70,
+            height: mode === 'single' ? 120 : 70, // Taller for single
             normalize: true,
             minPxPerSec: zoom,
             plugins: [regions]
@@ -112,15 +140,17 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
 
 
         // Load Audio
-        const vUrl = api.getAudioUrl(lessonId, "vocals");
-        const gUrl = api.getAudioUrl(lessonId, "guitar");
+        const gUrl = mode === 'lesson' && lessonId ? api.getAudioUrl(lessonId, "guitar") : audioUrl!;
 
-        wsV.current.load(vUrl);
         wsG.current.load(gUrl);
+
+        if (mode === 'lesson' && lessonId && wsV.current) {
+            const vUrl = api.getAudioUrl(lessonId, "vocals");
+            wsV.current.load(vUrl);
+        }
 
         // --- Event Bindings ---
 
-        // Time Update (Only need one source usually)
         wsG.current.on('timeupdate', (currentTime) => {
             setCurrentTime(currentTime);
         });
@@ -149,10 +179,6 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
                 wsG.current?.play();
                 wsV.current?.play();
                 setIsPlaying(true);
-            } else {
-                wsG.current?.pause();
-                wsV.current?.pause();
-                setIsPlaying(false);
             }
         });
 
@@ -160,24 +186,22 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
             setIsPlaying(false);
         });
 
-        // --- Synchronization Logic ---
-        // If user clicks on Guitar track (Master)
-        wsG.current.on('seeking', (currentTime) => {
-            wsV.current?.setTime(currentTime);
-        });
+        // --- Synchronization Logic (Lesson Mode Only) ---
+        if (mode === 'lesson') {
+            wsG.current.on('seeking', (currentTime) => {
+                wsV.current?.setTime(currentTime);
+            });
+            wsG.current.on('interaction', () => {
+                wsV.current?.setTime(wsG.current?.getCurrentTime() || 0);
+            });
+        }
 
-        wsG.current.on('interaction', () => {
-            wsV.current?.setTime(wsG.current?.getCurrentTime() || 0);
-        });
-
-        // Region Events (Draggable)
-        // Enable Drag Selection
+        // Region Events
         regionsG.current.enableDragSelection({
             color: 'rgba(255, 0, 0, 0.3)',
         });
 
         regionsG.current.on('region-created', (region) => {
-            // Enforce Single Region: Clear others
             regionsG.current?.getRegions().forEach(r => {
                 if (r !== region) r.remove();
             });
@@ -192,20 +216,16 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
             onSelectionChange?.(s);
         });
 
-        // Manual Loop Sync (Ported from Streamlit app.py)
         regionsG.current.on('region-out', (region) => {
-            // Check if we are actually playing, otherwise this might be a seek/init event
             if (!wsG.current?.isPlaying()) return;
 
             if (loopRef.current) {
-                // Loop back
                 const start = region.start;
                 wsG.current?.setTime(start);
                 wsV.current?.setTime(start);
                 wsG.current?.play();
                 wsV.current?.play();
             } else {
-                // Pause
                 wsG.current?.pause();
                 wsV.current?.pause();
                 setIsPlaying(false);
@@ -213,7 +233,7 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
         });
 
         regionsG.current.on('region-clicked', (region, e) => {
-            e.stopPropagation(); // Avoid seeking parent
+            e.stopPropagation();
             const start = region.start;
             wsG.current?.setTime(start);
             wsV.current?.setTime(start);
@@ -223,38 +243,25 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
         });
 
         // Cleanup
-        // Cleanup
         return () => {
-            try {
-                wsV.current?.destroy();
-            } catch (e) {
-                // Ignore AbortError during cleanup
-            }
-            try {
-                wsG.current?.destroy();
-            } catch (e) {
-                // Ignore AbortError during cleanup
-            }
+            try { wsV.current?.destroy(); } catch (e) { }
+            try { wsG.current?.destroy(); } catch (e) { }
         }
-    }, [lessonId]); // Re-init on lesson change
+    }, [lessonId, audioUrl, mode]);
 
     // --- Handlers ---
-
-    // Zoom
     useEffect(() => {
         if (!isReady) return;
         wsV.current?.zoom(zoom);
         wsG.current?.zoom(zoom);
     }, [zoom, isReady]);
 
-    // Speed
     useEffect(() => {
         if (!isReady) return;
         wsV.current?.setPlaybackRate(playbackRate);
         wsG.current?.setPlaybackRate(playbackRate);
     }, [playbackRate, isReady]);
 
-    // Play/Pause
     const togglePlay = useCallback(() => {
         if (wsG.current?.isPlaying()) {
             wsV.current?.pause();
@@ -267,7 +274,6 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
         }
     }, []);
 
-    // Mute
     useEffect(() => {
         wsV.current?.setMuted(vocalsMuted);
     }, [vocalsMuted]);
@@ -297,6 +303,18 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
 
     return (
         <div className={cn("bg-white rounded-xl border border-neutral-200 shadow-sm p-2 sm:p-4 w-full min-w-0", className)}>
+            {/* Analysis Badge (Single Mode) */}
+            {mode === 'single' && analysisData && (
+                <div className="flex gap-2 mb-4">
+                    <div className="bg-teal-50 text-teal-700 px-3 py-1 rounded-full text-xs font-bold border border-teal-200">
+                        BPM: {Math.round(analysisData.bpm)}
+                    </div>
+                    <div className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold border border-indigo-200">
+                        Key: {analysisData.key}
+                    </div>
+                </div>
+            )}
+
             <TransportControls
                 className="mb-4"
                 isPlaying={isPlaying}
@@ -317,21 +335,26 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
                 onClearSelection={handleClearSelection}
                 onSkipStart={handleSkipStart}
                 onSkipEnd={handleSkipEnd}
+                showMixer={mode === 'lesson'}
             />
 
             {/* Waveforms */}
             <div className="space-y-4 w-full">
-                <div className="relative bg-neutral-50 rounded-lg p-2 border border-neutral-100 overflow-x-auto w-full">
-                    <span className="absolute top-2 left-2 text-[10px] font-bold bg-white/80 px-1.5 py-0.5 rounded pointer-events-none z-10">
-                        🗣️ Vocals
-                    </span>
-                    <div ref={containerV} className="w-full" />
-                </div>
+                {mode === 'lesson' && (
+                    <div className="relative bg-neutral-50 rounded-lg p-2 border border-neutral-100 overflow-x-auto w-full">
+                        <span className="absolute top-2 left-2 text-[10px] font-bold bg-white/80 px-1.5 py-0.5 rounded pointer-events-none z-10">
+                            🗣️ Vocals
+                        </span>
+                        <div ref={containerV} className="w-full" />
+                    </div>
+                )}
 
                 <div className="relative bg-neutral-50 rounded-lg p-2 border border-neutral-100 overflow-x-auto w-full">
-                    <span className="absolute top-2 left-2 text-[10px] font-bold bg-white/80 px-1.5 py-0.5 rounded pointer-events-none z-10">
-                        🎸 Guitar
-                    </span>
+                    {mode === 'lesson' && (
+                        <span className="absolute top-2 left-2 text-[10px] font-bold bg-white/80 px-1.5 py-0.5 rounded pointer-events-none z-10">
+                            🎸 Guitar
+                        </span>
+                    )}
                     <div ref={containerG} className="w-full" />
                 </div>
             </div>

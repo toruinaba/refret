@@ -61,6 +61,7 @@ class DatabaseService:
                 CREATE TABLE IF NOT EXISTS licks (
                     id TEXT PRIMARY KEY,
                     lesson_id TEXT,
+                    practice_log_id INTEGER,
                     title TEXT,
                     start REAL,
                     end REAL,
@@ -69,9 +70,11 @@ class DatabaseService:
                     abc_score TEXT,
                     created_at TEXT,
                     FOREIGN KEY(lesson_id) REFERENCES lessons(id)
+                    FOREIGN KEY(practice_log_id) REFERENCES practice_logs(id)
                 )
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_licks_lesson ON licks (lesson_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_licks_practice ON licks (practice_log_id)")
 
             # Settings Table (Key-Value)
             conn.execute("""
@@ -344,11 +347,12 @@ class DatabaseService:
         with self.get_connection() as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO licks (
-                    id, lesson_id, title, start, end, tags, memo, abc_score, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, lesson_id, practice_log_id, title, start, end, tags, memo, abc_score, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 data["id"],
                 data.get("lesson_id"),
+                data.get("practice_log_id"),
                 data.get("title"),
                 data.get("start", 0.0),
                 data.get("end", 0.0),
@@ -367,6 +371,13 @@ class DatabaseService:
                 return None
             d = dict(row)
             d["tags"] = json.loads(d["tags"]) if d["tags"] else []
+            
+            # Inject source audio URL if practice log
+            if d.get("practice_log_id"):
+                # We can assume the endpoint structure: /api/journal/{id}/audio
+                # We don't necessarily need to verify it exists here, but we could.
+                d["source_audio_url"] = f"/api/journal/{d['practice_log_id']}/audio"
+                
             return d
 
     def list_licks(
@@ -375,6 +386,7 @@ class DatabaseService:
         limit: int = 50, 
         tags: List[str] = None, 
         lesson_id: str = None,
+        practice_log_id: int = None,
         date_from: str = None, 
         date_to: str = None
     ) -> Tuple[List[Dict[str, Any]], int]:
@@ -386,6 +398,10 @@ class DatabaseService:
         if lesson_id:
             conditions.append("lesson_id = ?")
             params.append(lesson_id)
+
+        if practice_log_id:
+            conditions.append("practice_log_id = ?")
+            params.append(practice_log_id)
             
         if tags:
             for tag in tags:
@@ -425,7 +441,7 @@ class DatabaseService:
         fields = []
         params = []
         
-        for k in ["title", "start", "end", "memo", "abc_score", "created_at", "lesson_id"]:
+        for k in ["title", "start", "end", "memo", "abc_score", "created_at", "lesson_id", "practice_log_id"]:
             if k in data:
                 fields.append(f"{k} = ?")
                 params.append(data[k])
