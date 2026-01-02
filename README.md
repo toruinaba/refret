@@ -1,38 +1,41 @@
 # Refret Web (Guitar Lesson Review App)
 
-Refret is a modern web application designed for guitarists to review, transcribe, and study their lessons effectively. It leverages AI to separate audio tracks, transcribe vocals, summarize content, and extract musical notes.
+Refret is a comprehensive practice companion web application for guitarists. It unifies lesson review, practice logging, and phrase (Lick) management into a single, AI-powered platform.
 
 ## Key Features
 
-*   **Smart Audio Separation**: Separates lesson audio into **Vocals** and **Guitar** tracks using [Demucs](https://github.com/facebookresearch/demucs).
-*   **AI Transcription & Summarization**:
-    *   Transcribes speech using [Faster-Whisper](https://github.com/SYSTRAN/faster-whisper).
-    *   Summarizes lesson content and extracts key points using LLM (OpenAI/Ollama).
-*   **Multi-Track Player**:
-    *   Synchronized playback of Original, Vocals, and Guitar tracks.
-    *   Waveform visualization with region looping and speed control.
-*   **Lick Library**: Organically build a library of "Licks" by selecting regions in your lessons and saving them with tags.
-*   **Configurable AI Settings**: Adjust model parameters (Demucs models, Whisper beam size, LLM prompts) directly from the UI.
-*   **Reprocessing**: Re-run Separation, Transcription, or Summarization steps individually with new settings.
+### 🎸 Smart Lesson Review
+*   **AI Separation**: Automatically separates audio into **Vocals** and **Guitar** tracks (Demucs).
+*   **Rich Player**: Multi-track player with synchronized playback, speed control, A-B looping, and track muting/soloing.
+*   **AI Transcription**: Full speech-to-text transcription using Faster-Whisper.
+*   **Smart Summary**: AI-generated summaries, key points, and chord progression extraction (LLM-powered).
+
+### 📝 Practice Journal
+*   **Activity Heatmap**: Visualize your practice consistency on a GitHub-style dashboard.
+*   **Rich Practice Logs**: Record sessions with audio, write Markdown notes (with ABC notation support), and tag entries.
+*   **Unified History**: Tracking for both structured "Lessons" and free-form "Practice" sessions in one view.
+
+### 🎼 Lick Library
+*   **Phrase Managment**: Select any region from a Lesson or Practice Log and save it as a "Lick".
+*   **ABC Notation Support**: Write or generate scores for your licks using standard ABC notation.
+*   **Auto Transcription**: (Experimental) Convert audio to score automatically.
+*   **Tagging**: Organize licks by technique, artist, or style for focused practice.
+
+### ⚙️ Modern Architecture
+*   **Responsive UI**: Built with React, Vite, and Tailwind CSS v4.
+*   **Fast Backend**: Python FastAPI with async processing for heavy AI tasks.
+*   **Flexible Storage**: SQLite database for metadata + filesystem for large media assets.
+
+---
 
 ## Architecture
 
-*   **Backend**: Python (FastAPI)
-    *   Core AI Services: Demucs, Faster-Whisper, Basic Pitch.
-    *   Data Persistence: Local Filesystem (`data/`).
-*   **Frontend**: React (Vite + TypeScript)
-    *   UI: Tailwind CSS v4, Lucide React.
-    *   State: React Hooks, Axios.
-*   **Infrastructure**: Docker Compose (Nginx, Python API).
+*   **Frontend**: React 19, Vite, TypeScript, Tailwind CSS v4
+*   **Backend**: Python 3.10+, FastAPI, SQLite
+*   **AI Stack**: Demucs (Separation), Faster-Whisper (Transcription), LangChain (Summarization)
+*   **Infrastructure**: Docker Compose
 
-## Getting Started
-
-### Prerequisites
-
-*   **Docker** and **Docker Compose** installed.
-*   (Optional) OpenAI API Key for summarization features.
-
-### Quick Start
+## Quick Start (Docker)
 
 1.  **Clone the repository**:
     ```bash
@@ -40,62 +43,42 @@ Refret is a modern web application designed for guitarists to review, transcribe
     cd refret
     ```
 
-2.  **Start the Application**:
+2.  **Start with Docker Compose**:
     ```bash
     docker-compose up -d --build
     ```
-    *   This will build the frontend and backend containers.
-    *   Backend runs on port `8000`.
-    *   Frontend runs on port `5173` (localhost:5173) or `80` depending on mapping.
-    *   *Note: Current `docker-compose.yml` maps host 5173 -> container 80.*
 
 3.  **Access the App**:
-    Open [http://localhost:5173](http://localhost:5173) in your browser.
+    *   Frontend: [http://localhost:5173](http://localhost:5173)
+    *   Backend API: `http://localhost:8000`
 
-4.  **Configure Settings**:
-    Go to the **Settings** page ("Cog" icon) to:
-    *   Set your OpenAI API Key (if using OpenAI).
-    *   Configure Demucs model (e.g., `htdemucs`, `mdx_extra`).
-    *   Adjust Whisper beam size or LLM prompts.
+4.  **Initial Setup**:
+    *   Go to **Settings** (Cog icon) in the sidebar.
+    *   Set your **OpenAI API Key** (required for Summary features).
+    *   Configure Demucs/Whisper model settings if needed.
 
-## Usage Guide
+## Manual Development
 
-### uploading Lessons
-1.  Click the **Upload** button on the main library view.
-2.  Select an audio file (MP3/WAV/M4A).
-3.  The system will automatically process the file (separate -> transcribe -> summarize).
-
-### Studying a Lesson
-1.  Click on a lesson card.
-2.  **Player**: Use the separate track controls to mute vocals or boost guitar.
-3.  **Looping**: Drag on the waveform to create a loop.
-4.  **Save Lick**: While a region is selected, click **Save Lick** (left sidebar) to save that phrase.
-5.  **Edit/Reprocess**:
-    *   Click **Edit Metadata** to change tags or memo.
-    *   In Edit mode, use the **AI Tools** section to re-run specific AI tasks (e.g., if you changed the separation model).
-
-### Lick Library
-*   View all your saved licks across different lessons.
-*   Filter by tags to practice specific techniques.
-
-## Development
-
-If you want to run the stack locally without Docker (e.g., for faster dev):
-
-**Backend**:
+### Backend
 ```bash
 cd backend
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+
+# Run server
 ./start_backend.sh
 ```
 
-**Frontend**:
+### Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-## Data Storage
+## Data Management
 
-All lesson data (audio, JSON metadata) is stored in the `data/` directory at the project root. This directory is volume-mounted in Docker, so your data persists across restarts.
+*   **Database**: stored in `data/practice.db` (SQLite).
+*   **Files**: Audio, transcripts, and summaries are stored in `data/lessons/{id}`.
+*   **Persistence**: The `data/` directory is mounted to the host, ensuring data survives container restarts.
