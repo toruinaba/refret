@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, Calendar, Edit2, Trash2, Plus } from "lucide-react"
+import { ArrowLeft, Calendar, Edit2, Trash2, Plus, Save } from "lucide-react"
 import { api } from "../lib/api"
 import type { PracticeLog } from "../types"
 import { MultiTrackPlayer, type MultiTrackPlayerRef } from "../components/player/MultiTrackPlayer"
@@ -132,19 +132,39 @@ export function PracticeDetail() {
                 </div>
 
                 <div className="flex gap-2">
-                    <button
-                        onClick={() => setIsEditing(!isEditing)}
-                        className={cn("p-2 rounded-lg transition-colors border", isEditing ? "bg-neutral-900 text-white border-transparent" : "bg-white text-neutral-500 border-neutral-200 hover:bg-neutral-50")}
-                        title={isEditing ? "Cancel Edit" : "Edit Log"}
-                    >
-                        <Edit2 className="w-5 h-5" />
-                    </button>
+                    {isEditing ? (
+                        <>
+                            <button
+                                onClick={() => setIsEditing(false)}
+                                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-600 bg-white border border-neutral-200 rounded-lg hover:bg-neutral-50"
+                            >
+                                <ArrowLeft className="w-4 h-4" />
+                                <span className="hidden sm:inline">Cancel</span>
+                            </button>
+                            <button
+                                onClick={handleSave}
+                                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700"
+                            >
+                                <Save className="w-4 h-4" />
+                                <span className="hidden sm:inline">Save</span>
+                            </button>
+                        </>
+                    ) : (
+                        <button
+                            onClick={() => setIsEditing(true)}
+                            className="p-2 sm:px-3 sm:py-2 flex items-center gap-2 text-sm font-medium text-neutral-600 bg-white border border-neutral-200 rounded-lg hover:bg-neutral-50"
+                            title="Edit Log"
+                        >
+                            <Edit2 className="w-4 h-4" />
+                            <span className="hidden sm:inline">Edit</span>
+                        </button>
+                    )}
                     <button
                         onClick={handleDelete}
-                        className="p-2 rounded-lg bg-white border border-red-200 text-red-500 hover:bg-red-50 transition-colors"
+                        className="p-2 sm:px-3 sm:py-2 flex items-center gap-2 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50"
                         title="Delete Log"
                     >
-                        <Trash2 className="w-5 h-5" />
+                        <Trash2 className="w-4 h-4" />
                     </button>
                 </div>
             </div>
@@ -256,11 +276,7 @@ export function PracticeDetail() {
                             </div>
                         </div>
 
-                        {isEditing && (
-                            <button onClick={handleSave} className="w-full bg-orange-600 text-white font-bold py-2 rounded-lg hover:bg-orange-700 transition-colors mt-4">
-                                Save Changes
-                            </button>
-                        )}
+
                     </div>
                 </div>
             </div>

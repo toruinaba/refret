@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, Clock, Tag, FileText, Music, Wand2, Trash2 } from "lucide-react"
+import { ArrowLeft, Clock, Tag, FileText, Music, Wand2, Trash2, Edit2, Save } from "lucide-react"
 import type { Lick } from "../types"
 import { api } from "../lib/api"
 import { MultiTrackPlayer } from "../components/player/MultiTrackPlayer"
@@ -54,11 +54,7 @@ export function LickDetail() {
         if (window.confirm("Are you sure you want to delete this lick?")) {
             try {
                 await api.deleteLick(id);
-                if (lick) {
-                    navigate(`/lesson/${lick.lesson_id}`);
-                } else {
-                    navigate("/licks");
-                }
+                navigate("/");
             } catch (e) {
                 console.error(e);
                 alert("Failed to delete lick");
@@ -138,29 +134,39 @@ export function LickDetail() {
                 <div className="flex gap-2">
                     {isEditing ? (
                         <>
-                            <button onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-100 rounded-md">
-                                Cancel
+                            <button
+                                onClick={() => setIsEditing(false)}
+                                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-600 bg-white border border-neutral-200 rounded-lg hover:bg-neutral-50"
+                            >
+                                <ArrowLeft className="w-4 h-4" />
+                                <span className="hidden sm:inline">Cancel</span>
                             </button>
                             <button
                                 onClick={handleUpdate}
                                 disabled={saving}
-                                className="px-3 py-1.5 text-sm bg-orange-600 text-white hover:bg-orange-700 rounded-md disabled:opacity-50"
+                                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700 disabled:opacity-50"
                             >
-                                {saving ? "Saving..." : "Save Changes"}
-                            </button>
-                            <button
-                                onClick={handleDelete}
-                                className="px-3 py-1.5 text-sm bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 rounded-md flex items-center gap-1"
-                                title="Delete Lick"
-                            >
-                                <Trash2 className="w-4 h-4" />
+                                <Save className="w-4 h-4" />
+                                <span className="hidden sm:inline">{saving ? "Saving..." : "Save"}</span>
                             </button>
                         </>
                     ) : (
-                        <button onClick={startEditing} className="px-3 py-1.5 text-sm border border-neutral-200 hover:bg-neutral-50 rounded-md text-neutral-700">
-                            Edit Details
+                        <button
+                            onClick={startEditing}
+                            className="p-2 sm:px-3 sm:py-2 flex items-center gap-2 text-sm font-medium text-neutral-600 bg-white border border-neutral-200 rounded-lg hover:bg-neutral-50"
+                            title="Edit Lick"
+                        >
+                            <Edit2 className="w-4 h-4" />
+                            <span className="hidden sm:inline">Edit</span>
                         </button>
                     )}
+                    <button
+                        onClick={handleDelete}
+                        className="p-2 sm:px-3 sm:py-2 flex items-center gap-2 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50"
+                        title="Delete Lick"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                    </button>
                 </div>
             </div>
 

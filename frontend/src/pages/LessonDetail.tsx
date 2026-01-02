@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, Plus, FileText, Tag, Calendar, PlayCircle, ChevronDown, ChevronRight, Music, Trash2, RefreshCw, Sparkles, Layers, Mic } from "lucide-react"
+import { ArrowLeft, Plus, FileText, Tag, Calendar, PlayCircle, ChevronDown, ChevronRight, Music, Trash2, RefreshCw, Layers, Mic, Edit2, Save } from "lucide-react"
 import { CreateLickDialog } from "../components/licks/CreateLickDialog"
 import { MultiTrackPlayer, type MultiTrackPlayerRef } from "../components/player/MultiTrackPlayer"
 import { api } from "../lib/api"
@@ -8,7 +8,7 @@ import type { LessonDetail as LessonDetailType } from "../types"
 import { TagInput } from "../components/ui/TagInput"
 import { MarkdownEditor } from "../components/ui/MarkdownEditor"
 import { MarkdownRenderer } from '../components/ui/MarkdownRenderer'
-import { cn } from "../lib/utils"
+
 
 export function LessonDetail() {
     const { id } = useParams<{ id: string }>()
@@ -182,13 +182,52 @@ export function LessonDetail() {
             )}
 
             {/* Header */}
-            <div className="flex items-center gap-4 border-b border-neutral-200 pb-4">
-                <Link to="/" className="p-2 hover:bg-neutral-100 rounded-full transition-colors flex-shrink-0">
-                    <ArrowLeft className="w-5 h-5 text-neutral-600" />
-                </Link>
-                <div className="flex flex-col min-w-0">
-                    <span className="text-xs text-neutral-500 font-mono truncate">{id}</span>
-                    <h1 className="text-xl sm:text-2xl font-bold truncate pr-4">{lesson?.title || id}</h1>
+            <div className="flex items-center justify-between gap-4 border-b border-neutral-200 pb-4">
+                <div className="flex items-center gap-4 min-w-0">
+                    <Link to="/lessons" className="p-2 hover:bg-neutral-100 rounded-full transition-colors flex-shrink-0">
+                        <ArrowLeft className="w-5 h-5 text-neutral-600" />
+                    </Link>
+                    <div className="flex flex-col min-w-0">
+                        <span className="text-xs text-neutral-500 font-mono truncate">{id}</span>
+                        <h1 className="text-xl sm:text-2xl font-bold truncate pr-4">{lesson?.title || id}</h1>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                    {isEditing ? (
+                        <>
+                            <button
+                                onClick={() => setIsEditing(false)}
+                                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-600 bg-white border border-neutral-200 rounded-lg hover:bg-neutral-50"
+                            >
+                                <ArrowLeft className="w-4 h-4" />
+                                <span className="hidden sm:inline">Cancel</span>
+                            </button>
+                            <button
+                                onClick={handleSaveMetadata}
+                                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700"
+                            >
+                                <Save className="w-4 h-4" />
+                                <span className="hidden sm:inline">Save</span>
+                            </button>
+                        </>
+                    ) : (
+                        <button
+                            onClick={() => setIsEditing(true)}
+                            className="p-2 sm:px-3 sm:py-2 flex items-center gap-2 text-sm font-medium text-neutral-600 bg-white border border-neutral-200 rounded-lg hover:bg-neutral-50"
+                            title="Edit Lesson"
+                        >
+                            <Edit2 className="w-4 h-4" />
+                            <span className="hidden sm:inline">Edit</span>
+                        </button>
+                    )}
+                    <button
+                        onClick={handleDelete}
+                        className="p-2 sm:px-3 sm:py-2 flex items-center gap-2 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50"
+                        title="Delete Lesson"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                    </button>
                 </div>
             </div>
 
@@ -211,59 +250,25 @@ export function LessonDetail() {
                             </button>
                         )}
 
-                        <button
-                            onClick={() => setIsEditing(!isEditing)}
-                            className={cn("w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors border", isEditing ? "bg-neutral-100 text-neutral-900 border-neutral-300" : "bg-white text-neutral-500 border-transparent hover:bg-neutral-50 hover:border-neutral-200")}
-                        >
-                            {isEditing ? "Cancel Editing" : "Edit Metadata"}
-                        </button>
+                        {selection && !isCreating && (
+                            <button
+                                onClick={() => setIsCreating(true)}
+                                className="w-full flex items-center justify-center gap-2 bg-orange-600 text-white px-4 py-3 rounded-lg hover:bg-orange-700 transition-colors font-medium shadow-sm animate-in fade-in slide-in-from-top-2"
+                            >
+                                <Plus className="w-4 h-4" />
+                                <span>Save Lick ({selection.start.toFixed(1)}s - {selection.end.toFixed(1)}s)</span>
+                            </button>
+                        )}
 
+                        {/* Redo Audio Separation Button (Player Context) */}
                         {isEditing && (
-                            <div className="space-y-2 animate-in slide-in-from-top-2 fade-in">
-                                <button
-                                    onClick={handleSaveMetadata}
-                                    className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-neutral-900 text-white hover:bg-neutral-800 shadow-sm"
-                                >
-                                    Save Changes
-                                </button>
-                                <button
-                                    onClick={handleDelete}
-                                    className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 flex items-center justify-center gap-2"
-                                >
-                                    <Trash2 className="w-4 h-4" /> Delete Lesson
-                                </button>
-
-                                {/* AI Tools Section */}
-                                <div className="mt-4 pt-4 border-t border-neutral-200">
-                                    <h3 className="text-xs font-bold text-neutral-400 uppercase mb-3 flex items-center gap-1.5">
-                                        <Sparkles className="w-3.5 h-3.5" /> AI Tools
-                                    </h3>
-
-                                    <div className="space-y-1">
-                                        <button
-                                            onClick={() => handleReprocess('separate')}
-                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 rounded-lg border border-transparent hover:border-neutral-200 transition-all text-left"
-                                        >
-                                            <Layers className="w-4 h-4 text-blue-500" />
-                                            Redo Audio Separation
-                                        </button>
-                                        <button
-                                            onClick={() => handleReprocess('transcribe')}
-                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 rounded-lg border border-transparent hover:border-neutral-200 transition-all text-left"
-                                        >
-                                            <Mic className="w-4 h-4 text-red-500" />
-                                            Redo Transcription
-                                        </button>
-                                        <button
-                                            onClick={() => handleReprocess('summarize')}
-                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 rounded-lg border border-transparent hover:border-neutral-200 transition-all text-left"
-                                        >
-                                            <RefreshCw className="w-4 h-4 text-green-500" />
-                                            Redo Summary
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
+                            <button
+                                onClick={() => handleReprocess('separate')}
+                                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
+                            >
+                                <Layers className="w-3.5 h-3.5" />
+                                Redo Audio Separation
+                            </button>
                         )}
                     </div>
                 </div>
@@ -274,10 +279,21 @@ export function LessonDetail() {
                     {lesson && (lesson.summary || (lesson.key_points && lesson.key_points.length > 0)) && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in slide-in-from-bottom-4 duration-500">
                             {/* Summary Card */}
-                            <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm space-y-4">
-                                <h3 className="flex items-center gap-2 font-semibold text-neutral-900 border-b border-neutral-100 pb-2">
-                                    <FileText className="w-4 h-4 text-orange-600" /> Summary
-                                </h3>
+                            <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm space-y-4 relative">
+                                <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
+                                    <h3 className="flex items-center gap-2 font-semibold text-neutral-900">
+                                        <FileText className="w-4 h-4 text-orange-600" /> Summary
+                                    </h3>
+                                    {isEditing && (
+                                        <button
+                                            onClick={() => handleReprocess('summarize')}
+                                            className="text-xs flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded hover:bg-green-100 transition-colors"
+                                            title="Redo Summary"
+                                        >
+                                            <RefreshCw className="w-3 h-3" /> Redo
+                                        </button>
+                                    )}
+                                </div>
                                 <p className="text-sm text-neutral-600 leading-relaxed whitespace-pre-wrap">
                                     {lesson.summary || "No summary available."}
                                 </p>
@@ -341,7 +357,21 @@ export function LessonDetail() {
                                 <span className="font-semibold text-sm text-neutral-700 flex items-center gap-2">
                                     <FileText className="w-4 h-4" /> Full Transcript
                                 </span>
-                                {showTranscript ? <ChevronDown className="w-4 h-4 text-neutral-400" /> : <ChevronRight className="w-4 h-4 text-neutral-400" />}
+                                <div className="flex items-center gap-3">
+                                    {isEditing && (
+                                        <div
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleReprocess('transcribe');
+                                            }}
+                                            className="text-xs flex items-center gap-1 text-red-600 bg-red-50 px-2 py-1 rounded hover:bg-red-100 transition-colors cursor-pointer"
+                                            title="Redo Transcription"
+                                        >
+                                            <Mic className="w-3 h-3" /> Redo
+                                        </div>
+                                    )}
+                                    {showTranscript ? <ChevronDown className="w-4 h-4 text-neutral-400" /> : <ChevronRight className="w-4 h-4 text-neutral-400" />}
+                                </div>
                             </button>
                             {showTranscript && (
                                 <div className="p-6 max-h-[500px] overflow-y-auto bg-white">
