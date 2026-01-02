@@ -200,20 +200,39 @@ class DatabaseService:
 
     def get_stats(self) -> Dict[str, Any]:
         with self.get_connection() as conn:
+            # Heatmap: Union of Practice Logs and Lessons
+            # Practice Logs: date, duration_minutes
+            # Lessons: date (or substring of created_at), duration (seconds) -> minutes
             cursor = conn.execute("""
-                SELECT date, COUNT(*) as count, SUM(duration_minutes) as duration
-                FROM practice_logs
+                SELECT date, SUM(minutes) as duration, COUNT(*) as count
+                FROM (
+                    SELECT date, duration_minutes as minutes FROM practice_logs
+                    UNION ALL
+                    SELECT date, COALESCE(duration, 0) / 60 as minutes FROM lessons
+                )
                 GROUP BY date
                 ORDER BY date ASC
             """)
             heatmap_rows = cursor.fetchall()
             
-            cursor = conn.execute("SELECT SUM(duration_minutes) FROM practice_logs")
+            # Total Duration
+            cursor = conn.execute("""
+                SELECT SUM(minutes) FROM (
+                     SELECT duration_minutes as minutes FROM practice_logs
+                     UNION ALL
+                     SELECT COALESCE(duration, 0) / 60 as minutes FROM lessons
+                )
+            """)
             total_duration = cursor.fetchone()[0] or 0
             
+            # Weekly Duration
+            # SQLite modifier for week start might vary, using -7 days approx
             cursor = conn.execute("""
-                SELECT SUM(duration_minutes) 
-                FROM practice_logs 
+                SELECT SUM(minutes) FROM (
+                     SELECT duration_minutes as minutes, date FROM practice_logs
+                     UNION ALL
+                     SELECT COALESCE(duration, 0) / 60 as minutes, date FROM lessons
+                )
                 WHERE date >= date('now', 'weekday 0', '-7 days')
             """)
             week_duration = cursor.fetchone()[0] or 0

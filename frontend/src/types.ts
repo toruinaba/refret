@@ -3,6 +3,9 @@ export interface Lesson {
     title: string;
     duration: number;
     created_at: string;
+    date?: string;
+    vocals_path?: string;
+    guitar_path?: string;
     tags?: string[];
     memo?: string;
     status?: 'queued' | 'processing' | 'completed' | 'error' | string;
