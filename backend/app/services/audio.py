@@ -94,12 +94,22 @@ class AudioProcessor:
                 str(file_path)
             ]
             
+            # Thread safety flags
+            cmd.extend(["-j", "2"]) # Limit parallel workers
+
             print(f"Executing Demucs CLI: {' '.join(cmd)}")
             
+            # Prepare Environment
+            env = os.environ.copy()
+            env["OMP_NUM_THREADS"] = "2" # Limit OpenMP threads to prevent CPU starvation
+            env["MKL_NUM_THREADS"] = "2"
+            
             # Run Subprocess
-            # capture_output=True to keep logs if needed, or let it print to stdout
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            print(result.stdout)
+            # IMPORTANT: Do NOT use capture_output=True. 
+            # Large output can fill the pipe buffer and cause the process to hang (deadlock).
+            # We redirect to DEVNULL or inherit stdout/stderr.
+            subprocess.run(cmd, check=True, env=env, stdout=None, stderr=None)
+            # print("Demucs finished.") -> No stdout to print if we don't capture.
             
             # Locate Output Files
             # Demucs outputs to: lesson_dir / model_name / file_path.stem / {vocals, drums, bass, other}.mp3
@@ -358,3 +368,61 @@ class AudioProcessor:
         except Exception as e:
             print(f"Analysis failed: {e}")
             return {"error": str(e), "bpm": 0, "key": "Unknown"}
+
+    def generate_peaks(self, audio_path: Path, output_path: Path, points_per_second: int = 100):
+        """
+        Generate waveform peaks using ffmpeg stream to avoid memory overhead.
+        Saves as JSON file.
+        """
+        print(f"Generating peaks for: {audio_path}")
+        try:
+            import numpy as np
+            import subprocess
+            
+            # Command to output raw float32 LE mono audio to stdout
+            cmd = [
+                "ffmpeg", 
+                "-loglevel", "error",
+                "-i", str(audio_path),
+                "-f", "f32le",
+                "-ac", "1", # Downmix to mono
+                "-ar", "44100", 
+                "-" # Output to pipe
+            ]
+            
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            
+            peaks = []
+            
+            # We want 'points_per_second' peaks.
+            # Sample Rate = 44100
+            # Chunk size = 44100 / points_per_second
+            chunk_size = int(44100 / points_per_second)
+            bytes_per_chunk = chunk_size * 4
+            
+            while True:
+                raw = process.stdout.read(bytes_per_chunk)
+                if not raw:
+                    break
+                
+                count = len(raw) // 4
+                if count == 0:
+                     break
+                     
+                y = np.frombuffer(raw, dtype=np.float32, count=count)
+                
+                if len(y) > 0:
+                    # Peak = max absolute value in this chunk
+                    peak = float(np.max(np.abs(y)))
+                    peaks.append(round(peak, 4))
+            
+            process.wait()
+             
+            # Save
+            with open(output_path, "w") as f:
+                json.dump({"data": peaks, "points_per_second": points_per_second}, f)
+                
+            print(f"Peaks generated: {len(peaks)} points (Saved to {output_path})")
+            
+        except Exception as e:
+            print(f"Failed to generate peaks: {e}")

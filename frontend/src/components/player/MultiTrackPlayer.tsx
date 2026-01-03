@@ -93,154 +93,200 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
         if (wsV.current) wsV.current.destroy();
         setIsReady(false);
 
-        // 1. Create Vocals (Only for Lesson Mode)
-        if (mode === 'lesson' && containerV.current) {
-            wsV.current = WaveSurfer.create({
-                container: containerV.current,
-                waveColor: '#A855F7',
-                progressColor: '#7E22CE',
-                cursorColor: '#7E22CE',
+        // 1. Fetch Peaks Data
+        const loadWaveSurfer = async () => {
+            // Helper to fetch peaks
+            const fetchPeaks = async (trackType: string) => {
+                if (mode !== 'lesson' || !lessonId) return undefined;
+                try {
+                    // Try to fetch peaks JSON
+                    // We assume API client can do this or fetch directly. 
+                    // Since api.client isn't fully exposed here, using fetch for now or adding to api.ts?
+                    // Let's assume we use the endpoint we just made: /api/lessons/{id}/audio/{track}/peaks
+                    const response = await fetch(`/api/lessons/${lessonId}/audio/${trackType}/peaks`);
+                    if (!response.ok) return undefined;
+                    const json = await response.json();
+                    return json.data; // Server returns { data: [...], points_per_second: 100 }
+                } catch (e) {
+                    // console.warn("Failed to load peaks", e);
+                    return undefined;
+                }
+            };
+
+            const [vocalsPeaks, guitarPeaks] = await Promise.all([
+                mode === 'lesson' ? fetchPeaks("vocals") : Promise.resolve(undefined),
+                mode === 'lesson' ? fetchPeaks("guitar") : Promise.resolve(undefined),
+            ]);
+
+            // console.log("Peaks loaded:", { vocals: vocalsPeaks?.length, guitar: guitarPeaks?.length });
+
+            // 1. Create Vocals (Only for Lesson Mode)
+            if (mode === 'lesson' && containerV.current) {
+                wsV.current = WaveSurfer.create({
+                    container: containerV.current,
+                    waveColor: '#A855F7',
+                    progressColor: '#7E22CE',
+                    cursorColor: '#7E22CE',
+                    barWidth: 2,
+                    barGap: 1,
+                    barRadius: 2,
+                    height: 70,
+                    normalize: true,
+                    minPxPerSec: zoom,
+                    interact: false, // Slave track
+                    backend: 'MediaElement', // Key for streaming!
+                    peaks: vocalsPeaks // Pass peaks to avoid decoding
+                });
+                if (wsV.current.getMediaElement()) {
+                    wsV.current.getMediaElement().autoplay = false;
+                }
+            }
+
+            // 2. Create Master Track (Guitar or Single Log)
+            const regions = RegionsPlugin.create()
+            regionsG.current = regions
+
+            // Color theme based on mode
+            const waveColor = mode === 'lesson' ? '#F97316' : '#14b8a6'; // Orange / Teal
+            const progressColor = mode === 'lesson' ? '#C2410C' : '#0d9488';
+
+            wsG.current = WaveSurfer.create({
+                container: containerG.current,
+                waveColor: waveColor,
+                progressColor: progressColor,
+                cursorColor: progressColor,
                 barWidth: 2,
                 barGap: 1,
                 barRadius: 2,
-                height: 70,
+                height: mode === 'single' ? 120 : 70, // Taller for single
                 normalize: true,
                 minPxPerSec: zoom,
-                interact: false, // Slave track
+                plugins: [regions],
+                backend: 'MediaElement', // Key for streaming!
+                peaks: guitarPeaks // Pass peaks to avoid decoding
             });
-            if (wsV.current.getMediaElement()) {
-                wsV.current.getMediaElement().autoplay = false;
-            }
-        }
-
-        // 2. Create Master Track (Guitar or Single Log)
-        const regions = RegionsPlugin.create()
-        regionsG.current = regions
-
-        // Color theme based on mode
-        const waveColor = mode === 'lesson' ? '#F97316' : '#14b8a6'; // Orange / Teal
-        const progressColor = mode === 'lesson' ? '#C2410C' : '#0d9488';
-
-        wsG.current = WaveSurfer.create({
-            container: containerG.current,
-            waveColor: waveColor,
-            progressColor: progressColor,
-            cursorColor: progressColor,
-            barWidth: 2,
-            barGap: 1,
-            barRadius: 2,
-            height: mode === 'single' ? 120 : 70, // Taller for single
-            normalize: true,
-            minPxPerSec: zoom,
-            plugins: [regions]
-        });
-        if (wsG.current.getMediaElement()) {
-            wsG.current.getMediaElement().autoplay = false;
-        }
-
-
-        // Load Audio
-        const gUrl = mode === 'lesson' && lessonId ? api.getAudioUrl(lessonId, "guitar") : audioUrl!;
-
-        wsG.current.load(gUrl);
-
-        if (mode === 'lesson' && lessonId && wsV.current) {
-            const vUrl = api.getAudioUrl(lessonId, "vocals");
-            wsV.current.load(vUrl);
-        }
-
-        // --- Event Bindings ---
-
-        wsG.current.on('timeupdate', (currentTime) => {
-            setCurrentTime(currentTime);
-        });
-
-        wsG.current.on('ready', () => {
-            setIsReady(true);
-            setTotalTime(wsG.current?.getDuration() || 0);
-
-            // Handle Initial Region
-            if (initialRegion) {
-                regions.clearRegions();
-                regions.addRegion({
-                    start: initialRegion.start,
-                    end: initialRegion.end,
-                    color: 'rgba(255, 0, 0, 0.3)',
-                    drag: true,
-                    resize: true
-                });
-                setSelection(initialRegion);
-                onSelectionChange?.(initialRegion);
-                wsG.current?.setTime(initialRegion.start);
-                wsV.current?.setTime(initialRegion.start);
+            if (wsG.current.getMediaElement()) {
+                wsG.current.getMediaElement().autoplay = false;
             }
 
-            if (autoPlay) {
-                wsG.current?.play();
-                wsV.current?.play();
-                setIsPlaying(true);
+
+            // Load Audio with Peaks support
+            // WaveSurfer with MediaElement backend loads audio via HTML5 Audio tag
+            // but renders waveform using peaks provided in create().
+            const gUrl = mode === 'lesson' && lessonId ? api.getAudioUrl(lessonId, "guitar") : audioUrl!;
+
+            wsG.current.load(gUrl); // Peaks already set in create
+
+            if (mode === 'lesson' && lessonId && wsV.current) {
+                const vUrl = api.getAudioUrl(lessonId, "vocals");
+                wsV.current.load(vUrl);
             }
-        });
 
-        wsG.current.on('finish', () => {
-            setIsPlaying(false);
-        });
+            // --- Event Bindings ---
+            // (Re-bind events here because we are inside async init)
+            bindEvents();
+        };
 
-        // --- Synchronization Logic (Lesson Mode Only) ---
-        if (mode === 'lesson') {
-            wsG.current.on('seeking', (currentTime) => {
-                wsV.current?.setTime(currentTime);
+        const bindEvents = () => {
+            if (!wsG.current) return;
+
+            wsG.current.on('timeupdate', (currentTime) => {
+                setCurrentTime(currentTime);
             });
-            wsG.current.on('interaction', () => {
-                wsV.current?.setTime(wsG.current?.getCurrentTime() || 0);
+
+            wsG.current.on('ready', () => {
+                setIsReady(true);
+                setTotalTime(wsG.current?.getDuration() || 0);
+
+                // Handle Initial Region
+                if (initialRegion && regionsG.current) {
+                    regionsG.current.clearRegions();
+                    regionsG.current.addRegion({
+                        start: initialRegion.start,
+                        end: initialRegion.end,
+                        color: 'rgba(255, 0, 0, 0.3)',
+                        drag: true,
+                        resize: true
+                    });
+                    setSelection(initialRegion);
+                    onSelectionChange?.(initialRegion);
+                    wsG.current?.setTime(initialRegion.start);
+                    wsV.current?.setTime(initialRegion.start);
+                }
+
+                if (autoPlay) {
+                    wsG.current?.play();
+                    wsV.current?.play();
+                    setIsPlaying(true);
+                }
             });
-        }
 
-        // Region Events
-        regionsG.current.enableDragSelection({
-            color: 'rgba(255, 0, 0, 0.3)',
-        });
-
-        regionsG.current.on('region-created', (region) => {
-            regionsG.current?.getRegions().forEach(r => {
-                if (r !== region) r.remove();
-            });
-            const s = { start: region.start, end: region.end };
-            setSelection(s);
-            onSelectionChange?.(s);
-        });
-
-        regionsG.current.on('region-updated', (region) => {
-            const s = { start: region.start, end: region.end };
-            setSelection(s);
-            onSelectionChange?.(s);
-        });
-
-        regionsG.current.on('region-out', (region) => {
-            if (!wsG.current?.isPlaying()) return;
-
-            if (loopRef.current) {
-                const start = region.start;
-                wsG.current?.setTime(start);
-                wsV.current?.setTime(start);
-                wsG.current?.play();
-                wsV.current?.play();
-            } else {
-                wsG.current?.pause();
-                wsV.current?.pause();
+            wsG.current.on('finish', () => {
                 setIsPlaying(false);
-            }
-        });
+            });
 
-        regionsG.current.on('region-clicked', (region, e) => {
-            e.stopPropagation();
-            const start = region.start;
-            wsG.current?.setTime(start);
-            wsV.current?.setTime(start);
-            wsG.current?.play();
-            wsV.current?.play();
-            setIsPlaying(true);
-        });
+            // --- Synchronization Logic (Lesson Mode Only) ---
+            if (mode === 'lesson' && wsV.current) {
+                wsG.current.on('seeking', (currentTime) => {
+                    wsV.current?.setTime(currentTime);
+                });
+                wsG.current.on('interaction', () => {
+                    wsV.current?.setTime(wsG.current?.getCurrentTime() || 0);
+                });
+            }
+
+            // Region Events
+            if (regionsG.current) {
+                regionsG.current.enableDragSelection({
+                    color: 'rgba(255, 0, 0, 0.3)',
+                });
+
+                regionsG.current.on('region-created', (region) => {
+                    regionsG.current?.getRegions().forEach(r => {
+                        if (r !== region) r.remove();
+                    });
+                    const s = { start: region.start, end: region.end };
+                    setSelection(s);
+                    onSelectionChange?.(s);
+                });
+
+                regionsG.current.on('region-updated', (region) => {
+                    const s = { start: region.start, end: region.end };
+                    setSelection(s);
+                    onSelectionChange?.(s);
+                });
+
+                regionsG.current.on('region-out', (region) => {
+                    if (!wsG.current?.isPlaying()) return;
+
+                    if (loopRef.current) {
+                        const start = region.start;
+                        wsG.current?.setTime(start);
+                        wsV.current?.setTime(start);
+                        wsG.current?.play();
+                        wsV.current?.play();
+                    } else {
+                        wsG.current?.pause();
+                        wsV.current?.pause();
+                        setIsPlaying(false);
+                    }
+                });
+
+                regionsG.current.on('region-clicked', (region, e) => {
+                    e.stopPropagation();
+                    const start = region.start;
+                    wsG.current?.setTime(start);
+                    wsV.current?.setTime(start);
+                    wsG.current?.play();
+                    wsV.current?.play();
+                    setIsPlaying(true);
+                });
+            }
+        };
+
+        // Start initialization
+        loadWaveSurfer();
+
 
         // Cleanup
         return () => {

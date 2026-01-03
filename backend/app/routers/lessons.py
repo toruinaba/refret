@@ -45,6 +45,11 @@ def process_lesson_background(lesson_id: str, file_path: Path, store: StoreServi
         
         try:
             vocals_path, guitar_path = processor.separate_audio(proc_wav_path, store.data_dir / lesson_id)
+            
+            # Generate Peaks
+            update_status("processing", 0.15, "Generating Waveforms...")
+            processor.generate_peaks(vocals_path, store.data_dir / lesson_id / "vocals.json")
+            processor.generate_peaks(guitar_path, store.data_dir / lesson_id / "guitar.json")
         finally:
             # Cleanup temp proc wav
             if proc_wav_path.exists() and proc_wav_path != file_path:
@@ -276,6 +281,37 @@ async def get_audio_stream(lesson_id: str, track_type: str, store: StoreService 
         media_type="audio/mpeg",
         filename=f"{lesson_id}_{track_type}.mp3"
     )
+
+@router.get("/{lesson_id}/audio/{track_type}/peaks")
+async def get_audio_peaks(lesson_id: str, track_type: str, store: StoreService = Depends(get_store)):
+    """
+    Get pre-computed peaks data for audio track.
+    """
+    if track_type not in ["vocals", "guitar"]:
+        raise HTTPException(status_code=400, detail="Invalid track type")
+        
+    peaks_path = store.data_dir / lesson_id / f"{track_type}.json"
+    
+    # Lazy generation if missing
+    if not peaks_path.exists():
+        audio_path = store.data_dir / lesson_id / f"{track_type}.mp3"
+        if audio_path.exists():
+            from app.services.audio import AudioProcessor
+            processor = AudioProcessor()
+            processor.generate_peaks(audio_path, peaks_path)
+        else:
+             # If audio doesn't exist, we can't generate
+             raise HTTPException(status_code=404, detail="Audio file not found")
+            
+    if not peaks_path.exists():
+         raise HTTPException(status_code=404, detail="Peaks not found")
+
+    with open(peaks_path, "r") as f:
+        try:
+            data = json.load(f)
+            return data
+        except:
+             raise HTTPException(status_code=500, detail="Invalid peaks file")
 
 @router.get("/{lesson_id}/transcript")
 async def get_transcript(lesson_id: str, store: StoreService = Depends(get_store)):
