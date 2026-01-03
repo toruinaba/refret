@@ -95,14 +95,19 @@ class AudioProcessor:
             ]
             
             # Thread safety flags
-            cmd.extend(["-j", "2"]) # Limit parallel workers
+            # -j 1 is critical for low memory environments to prevent parallel processing overhead
+            cmd.extend(["-j", "1"]) 
+            
+            # Reduce segment size to lower peak memory usage (Default is ~7.8s)
+            cmd.extend(["--segment", "4"])
 
             print(f"Executing Demucs CLI: {' '.join(cmd)}")
             
             # Prepare Environment
             env = os.environ.copy()
-            env["OMP_NUM_THREADS"] = "2" # Limit OpenMP threads to prevent CPU starvation
-            env["MKL_NUM_THREADS"] = "2"
+            # Strict single thread execution
+            env["OMP_NUM_THREADS"] = "1" 
+            env["MKL_NUM_THREADS"] = "1"
             
             # Run Subprocess
             # IMPORTANT: Do NOT use capture_output=True. 

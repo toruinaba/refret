@@ -143,39 +143,44 @@ export const MultiTrackPlayer = forwardRef<MultiTrackPlayerRef, MultiTrackPlayer
             }
 
             // 2. Create Master Track (Guitar or Single Log)
-            const regions = RegionsPlugin.create()
-            regionsG.current = regions
+            if (containerG.current) {
+                const regions = RegionsPlugin.create()
+                regionsG.current = regions
 
-            // Color theme based on mode
-            const waveColor = mode === 'lesson' ? '#F97316' : '#14b8a6'; // Orange / Teal
-            const progressColor = mode === 'lesson' ? '#C2410C' : '#0d9488';
+                // Color theme based on mode
+                const waveColor = mode === 'lesson' ? '#F97316' : '#14b8a6'; // Orange / Teal
+                const progressColor = mode === 'lesson' ? '#C2410C' : '#0d9488';
 
-            wsG.current = WaveSurfer.create({
-                container: containerG.current,
-                waveColor: waveColor,
-                progressColor: progressColor,
-                cursorColor: progressColor,
-                barWidth: 2,
-                barGap: 1,
-                barRadius: 2,
-                height: mode === 'single' ? 120 : 70, // Taller for single
-                normalize: true,
-                minPxPerSec: zoom,
-                plugins: [regions],
-                backend: 'MediaElement', // Key for streaming!
-                peaks: guitarPeaks // Pass peaks to avoid decoding
-            });
-            if (wsG.current.getMediaElement()) {
-                wsG.current.getMediaElement().autoplay = false;
+                wsG.current = WaveSurfer.create({
+                    container: containerG.current,
+                    waveColor: waveColor,
+                    progressColor: progressColor,
+                    cursorColor: progressColor,
+                    barWidth: 2,
+                    barGap: 1,
+                    barRadius: 2,
+                    height: mode === 'single' ? 120 : 70, // Taller for single
+                    normalize: true,
+                    minPxPerSec: zoom,
+                    plugins: [regions],
+                    backend: 'MediaElement', // Key for streaming!
+                    peaks: guitarPeaks // Pass peaks to avoid decoding
+                });
+                if (wsG.current.getMediaElement()) {
+                    wsG.current.getMediaElement().autoplay = false;
+                }
             }
 
 
             // Load Audio with Peaks support
             // WaveSurfer with MediaElement backend loads audio via HTML5 Audio tag
             // but renders waveform using peaks provided in create().
+            // Load Audio
             const gUrl = mode === 'lesson' && lessonId ? api.getAudioUrl(lessonId, "guitar") : audioUrl!;
 
-            wsG.current.load(gUrl); // Peaks already set in create
+            if (wsG.current) {
+                wsG.current.load(gUrl); // Peaks already set in create
+            }
 
             if (mode === 'lesson' && lessonId && wsV.current) {
                 const vUrl = api.getAudioUrl(lessonId, "vocals");
