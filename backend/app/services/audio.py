@@ -2,11 +2,7 @@ import os
 import json
 import subprocess
 from pathlib import Path
-import soundfile as sf
-import torch
-import torchaudio
-from demucs.pretrained import get_model
-from demucs.apply import apply_model
+import shutil
 from faster_whisper import WhisperModel
 import openai
 from langchain_openai import ChatOpenAI
@@ -57,11 +53,11 @@ class AudioProcessor:
 
     def separate_audio(self, file_path: Path, lesson_dir: Path):
         """
-        Separate audio into vocals and guitar using Demucs.
-        Expects WAV input for robust loading.
+        Separate audio into vocals and guitar using Demucs CLI.
+        Allocates memory management to the external process to prevent OOM.
         returns: (vocals_path, guitar_path)
         """
-        print(f"Separating audio (In-Process Manual): {file_path}")
+        print(f"Separating audio (CLI): {file_path}")
         
         try:
             # Load overrides
@@ -69,85 +65,102 @@ class AudioProcessor:
             store = StoreService()
             overrides = store.get_settings_override()
 
-            # Load Model
+            # Load Model Name
             model_name = overrides.get("demucs_model") or self.settings.DEMUCS_MODEL
-            model = get_model(model_name)
-            model.cpu()
-            model.eval()
-
-            # Load Audio using soundfile to bypass torchaudio backend issues
-            wav_np, sr = sf.read(str(file_path))
             
-            # Convert to torch tensor
-            wav = torch.from_numpy(wav_np).float()
+            # Construct Command
+            # demucs -n <model> -o <out_dir> <input>
+            # --mp3 means output directly as mp3 (Demucs supports this) - this saves a conversion step!
+            # But wait, original code converted to WAV then separated then converted back.
+            # Demucs CLI can accept any format ffmpeg supports.
+            # We can pass the original file directly if we wanted, but prepare_wav handles normalization.
+            # Let's use the input file_path (which is WAV from prepare_wav).
             
-            # Handle shape
-            if wav.dim() == 1:
-                wav = wav.unsqueeze(0)
-            else:
-                wav = wav.t()
+            # Note: Demucs default output structure is: <out_dir>/<model_name>/<song_name>/...
+            # We need to handle this.
             
-            if wav.shape[-1] == 0:
-                raise ValueError("Loaded audio is empty.")
-            
-            # Resample if needed
-            if sr != model.samplerate:
-                resampler = torchaudio.transforms.Resample(sr, model.samplerate)
-                wav = resampler(wav)
-            
-            # Prepare input: [1, channels, time]
-            wav_input = wav.unsqueeze(0)
-            
-            # Normalize
-            ref_mean = wav_input.mean()
-            ref_std = wav_input.std() + 1e-8
-            wav_norm = (wav_input - ref_mean) / ref_std
-            
-            # Inference
-            print("Running inference...")
+            # Additional flags
             shifts = overrides.get("demucs_shifts") or self.settings.DEMUCS_SHIFTS
             overlap = overrides.get("demucs_overlap") or self.settings.DEMUCS_OVERLAP
-            sources = apply_model(model, wav_norm, shifts=shifts, split=True, overlap=overlap, progress=True)[0]
             
-            # Denormalize
-            sources = sources * ref_std + ref_mean
+            cmd = [
+                "demucs",
+                "-n", model_name,
+                "-o", str(lesson_dir),
+                "--mp3", # Output as MP3 directly
+                "--mp3-bitrate", "192",
+                "--shifts", str(shifts),
+                "--overlap", str(overlap),
+                str(file_path)
+            ]
             
-            # Identify stems
-            sources_list = model.sources
-            vocals_idx = sources_list.index("vocals")
-            vocals_wav = sources[vocals_idx] # [channels, time]
+            print(f"Executing Demucs CLI: {' '.join(cmd)}")
             
-            # Calculate No Vocals (Backing)
-            no_vocals_wav = torch.zeros_like(vocals_wav)
-            for i, src_name in enumerate(sources_list):
-                 if src_name != "vocals":
-                     no_vocals_wav += sources[i]
+            # Run Subprocess
+            # capture_output=True to keep logs if needed, or let it print to stdout
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            print(result.stdout)
             
-            # Ensure proper shape for writing [time, channels]
-            vocals_out = vocals_wav.cpu().numpy().T
-            backing_out = no_vocals_wav.cpu().numpy().T
+            # Locate Output Files
+            # Demucs outputs to: lesson_dir / model_name / file_path.stem / {vocals, drums, bass, other}.mp3
+            # file_path is usually "proc_temp.wav" from prepare_wav.
+            song_name = file_path.stem # e.g. "proc_temp"
+            
+            demucs_out_dir = lesson_dir / model_name / song_name
+            
+            if not demucs_out_dir.exists():
+                raise FileNotFoundError(f"Demucs output directory not found: {demucs_out_dir}")
+                
+            # Move/Rename specific stems to our expected flat structure
+            # We want: vocals.mp3, guitar.mp3
+            # Demucs (htdemucs) usually outputs: vocals.mp3, drums.mp3, bass.mp3, other.mp3
+            # OR if using 6s models, guitar.mp3 might exist.
+            # Standard htdemucs is 4 sources: vocals, drums, bass, other.
+            # "other" usually contains guitar/piano in 4-stem models.
+            # htdemucs_6s has guitar. 
+            
+            # Let's check what stems are available
+            available_stems = list(demucs_out_dir.glob("*.mp3"))
+            print(f"Generated stems: {[p.name for p in available_stems]}")
+            
+            target_vocals = lesson_dir / "vocals.mp3"
+            target_guitar = lesson_dir / "guitar.mp3"
+            
+            # Vocals
+            src_vocals = demucs_out_dir / "vocals.mp3"
+            if src_vocals.exists():
+                shutil.move(str(src_vocals), str(target_vocals))
+            else:
+                # Fallback or create silent?
+                print("Warning: No vocals stem found.")
+            
+            # Guitar
+            # If guitar stem exists (6s model), use it.
+            # If not, use 'other' as guitar (common substitution for 4-stem).
+            # Or mix 'other' + 'piano' etc.
+            
+            src_guitar = demucs_out_dir / "guitar.mp3"
+            src_other = demucs_out_dir / "other.mp3"
+            
+            if src_guitar.exists():
+                shutil.move(str(src_guitar), str(target_guitar))
+            elif src_other.exists():
+                print("Using 'other' stem as guitar track.")
+                shutil.move(str(src_other), str(target_guitar))
+            else:
+                print("Warning: No guitar/other stem found.")
+                
+            # Cleanup Demucs folders
+            try:
+                shutil.rmtree(lesson_dir / model_name)
+            except Exception as e:
+                print(f"Warning: Failed to cleanup temp demucs folder: {e}")
 
-            # Prepare paths
-            temp_vocals_path = lesson_dir / "vocals_temp.wav"
-            temp_guitar_path = lesson_dir / "guitar_temp.wav"
-            final_vocals_path = lesson_dir / "vocals.mp3"
-            final_guitar_path = lesson_dir / "guitar.mp3"
-            
-            # Save WAV
-            sf.write(str(temp_vocals_path), vocals_out, model.samplerate)
-            sf.write(str(temp_guitar_path), backing_out, model.samplerate)
-            
-            # Convert to MP3
-            # Convert to MP3
-            self.convert_to_mp3(temp_vocals_path, final_vocals_path)
-            self.convert_to_mp3(temp_guitar_path, final_guitar_path)
+            return target_vocals, target_guitar
 
-            # Cleanup Temp Wavs
-            if temp_vocals_path.exists(): temp_vocals_path.unlink()
-            if temp_guitar_path.exists(): temp_guitar_path.unlink()
-            
-            return final_vocals_path, final_guitar_path
-
+        except subprocess.CalledProcessError as e:
+            print(f"Demucs CLI failed: {e.stderr}")
+            raise RuntimeError(f"Demucs CLI failed: {e.stderr}")
         except Exception as e:
             print(f"Error in separation: {e}")
             raise e
