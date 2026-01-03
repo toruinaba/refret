@@ -53,132 +53,164 @@ class AudioProcessor:
 
     def separate_audio(self, file_path: Path, lesson_dir: Path):
         """
-        Separate audio into vocals and guitar using Demucs CLI.
-        Allocates memory management to the external process to prevent OOM.
-        returns: (vocals_path, guitar_path)
+        Separate audio into vocals and guitar using Demucs CLI with Chunking.
+        Splits audio into 10-minute chunks to prevent OOM, processes them, then merges.
         """
-        print(f"Separating audio (CLI): {file_path}")
+        print(f"Separating audio (Chunked Strategy): {file_path}")
+        
+        CHUNK_DURATION = 600  # 10 minutes in seconds
+        temp_dir = lesson_dir / "temp_separation"
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+        temp_dir.mkdir(parents=True)
         
         try:
-            # Load overrides
-            from app.services.store import StoreService
-            store = StoreService()
-            overrides = store.get_settings_override()
-
-            # Load Model Name
-            model_name = overrides.get("demucs_model") or self.settings.DEMUCS_MODEL
+            # 1. Split Audio
+            print(f"Splitting audio into {CHUNK_DURATION}s chunks...")
+            chunk_files = self._split_audio(file_path, temp_dir, CHUNK_DURATION)
+            print(f"Created {len(chunk_files)} chunks: {[f.name for f in chunk_files]}")
             
-            # Construct Command
-            # demucs -n <model> -o <out_dir> <input>
-            # --mp3 means output directly as mp3 (Demucs supports this) - this saves a conversion step!
-            # But wait, original code converted to WAV then separated then converted back.
-            # Demucs CLI can accept any format ffmpeg supports.
-            # We can pass the original file directly if we wanted, but prepare_wav handles normalization.
-            # Let's use the input file_path (which is WAV from prepare_wav).
+            vocab_chunks = []
+            guitar_chunks = []
             
-            # Note: Demucs default output structure is: <out_dir>/<model_name>/<song_name>/...
-            # We need to handle this.
-            
-            # Additional flags
-            shifts = overrides.get("demucs_shifts") or self.settings.DEMUCS_SHIFTS
-            overlap = overrides.get("demucs_overlap") or self.settings.DEMUCS_OVERLAP
-            
-            cmd = [
-                "demucs",
-                "-n", model_name,
-                "-o", str(lesson_dir),
-                "--mp3", # Output as MP3 directly
-                "--mp3-bitrate", "192",
-                "--shifts", str(shifts),
-                "--overlap", str(overlap),
-                str(file_path)
-            ]
-            
-            # Thread safety flags
-            # -j 1 is critical for low memory environments to prevent parallel processing overhead
-            cmd.extend(["-j", "1"]) 
-            
-            # Reduce segment size to lower peak memory usage (Default is ~7.8s)
-            cmd.extend(["--segment", "4"])
-
-            print(f"Executing Demucs CLI: {' '.join(cmd)}")
-            
-            # Prepare Environment
-            env = os.environ.copy()
-            # Strict single thread execution
-            env["OMP_NUM_THREADS"] = "1" 
-            env["MKL_NUM_THREADS"] = "1"
-            
-            # Run Subprocess
-            # IMPORTANT: Do NOT use capture_output=True. 
-            # Large output can fill the pipe buffer and cause the process to hang (deadlock).
-            # We redirect to DEVNULL or inherit stdout/stderr.
-            subprocess.run(cmd, check=True, env=env, stdout=None, stderr=None)
-            # print("Demucs finished.") -> No stdout to print if we don't capture.
-            
-            # Locate Output Files
-            # Demucs outputs to: lesson_dir / model_name / file_path.stem / {vocals, drums, bass, other}.mp3
-            # file_path is usually "proc_temp.wav" from prepare_wav.
-            song_name = file_path.stem # e.g. "proc_temp"
-            
-            demucs_out_dir = lesson_dir / model_name / song_name
-            
-            if not demucs_out_dir.exists():
-                raise FileNotFoundError(f"Demucs output directory not found: {demucs_out_dir}")
+            # 2. Process Each Chunk
+            for i, chunk_file in enumerate(chunk_files):
+                print(f"--- Processing Chunk {i+1}/{len(chunk_files)}: {chunk_file.name} ---")
                 
-            # Move/Rename specific stems to our expected flat structure
-            # We want: vocals.mp3, guitar.mp3
-            # Demucs (htdemucs) usually outputs: vocals.mp3, drums.mp3, bass.mp3, other.mp3
-            # OR if using 6s models, guitar.mp3 might exist.
-            # Standard htdemucs is 4 sources: vocals, drums, bass, other.
-            # "other" usually contains guitar/piano in 4-stem models.
-            # htdemucs_6s has guitar. 
+                # Output dir for this chunk's separation
+                chunk_out_root = temp_dir / f"out_{i}"
+                chunk_out_root.mkdir()
+                
+                # Run Demucs on this chunk
+                vocals_path, guitar_path = self._run_demucs_on_single_file(chunk_file, chunk_out_root)
+                
+                vocab_chunks.append(vocals_path)
+                guitar_chunks.append(guitar_path)
             
-            # Let's check what stems are available
-            available_stems = list(demucs_out_dir.glob("*.mp3"))
-            print(f"Generated stems: {[p.name for p in available_stems]}")
-            
+            # 3. Merge Chunks
             target_vocals = lesson_dir / "vocals.mp3"
             target_guitar = lesson_dir / "guitar.mp3"
             
-            # Vocals
-            src_vocals = demucs_out_dir / "vocals.mp3"
-            if src_vocals.exists():
-                shutil.move(str(src_vocals), str(target_vocals))
-            else:
-                # Fallback or create silent?
-                print("Warning: No vocals stem found.")
+            print("Merging vocal chunks...")
+            self._merge_audio_files(vocab_chunks, target_vocals)
             
-            # Guitar
-            # If guitar stem exists (6s model), use it.
-            # If not, use 'other' as guitar (common substitution for 4-stem).
-            # Or mix 'other' + 'piano' etc.
+            print("Merging guitar chunks...")
+            self._merge_audio_files(guitar_chunks, target_guitar)
             
-            src_guitar = demucs_out_dir / "guitar.mp3"
-            src_other = demucs_out_dir / "other.mp3"
-            
-            if src_guitar.exists():
-                shutil.move(str(src_guitar), str(target_guitar))
-            elif src_other.exists():
-                print("Using 'other' stem as guitar track.")
-                shutil.move(str(src_other), str(target_guitar))
-            else:
-                print("Warning: No guitar/other stem found.")
-                
-            # Cleanup Demucs folders
-            try:
-                shutil.rmtree(lesson_dir / model_name)
-            except Exception as e:
-                print(f"Warning: Failed to cleanup temp demucs folder: {e}")
-
             return target_vocals, target_guitar
 
-        except subprocess.CalledProcessError as e:
-            print(f"Demucs CLI failed: {e.stderr}")
-            raise RuntimeError(f"Demucs CLI failed: {e.stderr}")
         except Exception as e:
-            print(f"Error in separation: {e}")
+            print(f"Error in chunked separation: {e}")
             raise e
+        finally:
+            # Cleanup temp chunks
+            if temp_dir.exists():
+                try:
+                    shutil.rmtree(temp_dir)
+                except Exception as cleanup_error:
+                    print(f"Warning: Failed to cleanup temp dir: {cleanup_error}")
+
+    def _split_audio(self, input_path: Path, output_dir: Path, segment_time: int) -> list[Path]:
+        """Split audio into chunks using ffmpeg."""
+        # Pattern for output files
+        output_pattern = output_dir / "chunk_%03d.wav"
+        
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(input_path),
+            "-f", "segment",
+            "-segment_time", str(segment_time),
+            "-c", "copy",
+            str(output_pattern)
+        ]
+        
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Return sorted list of created files
+        return sorted(list(output_dir.glob("chunk_*.wav")))
+
+    def _merge_audio_files(self, input_files: list[Path], output_path: Path):
+        """Merge multiple audio files into one using ffmpeg concat demuxer."""
+        if not input_files:
+            raise ValueError("No files to merge")
+            
+        # Create a text file listing all inputs
+        list_path = input_files[0].parent / "merge_list.txt"
+        with open(list_path, "w") as f:
+            for path in input_files:
+                f.write(f"file '{path.absolute()}'\n")
+        
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(list_path),
+            "-c", "copy",
+            str(output_path)
+        ]
+        
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def _run_demucs_on_single_file(self, file_path: Path, output_dir: Path) -> tuple[Path, Path]:
+        """Internal helper to run Demucs on a single (chunked) file."""
+        # Load settings
+        from app.services.store import StoreService
+        store = StoreService()
+        overrides = store.get_settings_override()
+        
+        model_name = overrides.get("demucs_model") or self.settings.DEMUCS_MODEL
+        shifts = overrides.get("demucs_shifts") or self.settings.DEMUCS_SHIFTS
+        overlap = overrides.get("demucs_overlap") or self.settings.DEMUCS_OVERLAP
+        
+        cmd = [
+            "demucs",
+            "-n", model_name,
+            "-o", str(output_dir),
+            "--mp3",
+            "--mp3-bitrate", "192",
+            "--shifts", str(shifts),
+            "--overlap", str(overlap),
+            "-j", "1", # Strict single job
+            "--segment", "4", # Strict short segments
+            "-d", "cpu", # Force CPU
+            "--int24", # Save memory
+            str(file_path)
+        ]
+        
+        # Environment
+        env = os.environ.copy()
+        env["OMP_NUM_THREADS"] = "1" 
+        env["MKL_NUM_THREADS"] = "1"
+        
+        # Run
+        subprocess.run(cmd, check=True, env=env, stdout=None, stderr=None)
+        
+        # Locate Output
+        song_name = file_path.stem
+        demucs_out_sub = output_dir / model_name / song_name
+        
+        if not demucs_out_sub.exists():
+            raise FileNotFoundError(f"Demucs output not found at {demucs_out_sub}")
+
+        # Find stems (flexible logic for 4s or 6s models)
+        src_vocals = demucs_out_sub / "vocals.mp3"
+        
+        src_guitar = demucs_out_sub / "guitar.mp3"
+        src_other = demucs_out_sub / "other.mp3"
+        
+        # Return paths to the separates stems (we don't move them yet, just return paths)
+        # Note: If vocals missing, we might need to handle it.
+        # But for chunking, better to crash/warn if consistent failure.
+        
+        final_vocals = src_vocals if src_vocals.exists() else None
+        final_guitar = src_guitar if src_guitar.exists() else (src_other if src_other.exists() else None)
+        
+        if not final_vocals or not final_guitar:
+             raise RuntimeError(f"Missing stems in chunk output: {file_path.name}")
+             
+        return final_vocals, final_guitar
+
+
 
     def convert_to_mp3(self, input_path: Path, output_path: Path):
         """Convert any audio file to MP3 (192k)."""

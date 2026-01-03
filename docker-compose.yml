@@ -20,6 +20,13 @@ services:
       - PYTHONUNBUFFERED=1
       - DATA_DIR=/app/data
     restart: unless-stopped
+    # Production Resource Limits (Uncomment for Linux/Prod)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 6G   # Hard limit (process killed if exceeded)
+    #     reservations:
+    #       memory: 2G   # Guaranteed minimum
 
   frontend:
     build:
