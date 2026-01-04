@@ -406,15 +406,48 @@ class AudioProcessor:
             print(f"Analysis failed: {e}")
             return {"error": str(e), "bpm": 0, "key": "Unknown"}
 
+            print(f"Peaks generated: {len(peaks)} points (Saved to {output_path})")
+            
+        except Exception as e:
+            print(f"Failed to generate peaks: {e}")
+
+    def _get_duration(self, audio_path: Path) -> float:
+        """Get audio duration using ffprobe."""
+        try:
+            cmd = [
+                "ffprobe", 
+                "-v", "error", 
+                "-show_entries", "format=duration", 
+                "-of", "default=noprint_wrappers=1:nokey=1", 
+                str(audio_path)
+            ]
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            return float(result.stdout.strip())
+        except Exception:
+            return 0.0
+
     def generate_peaks(self, audio_path: Path, output_path: Path, points_per_second: int = 100):
         """
         Generate waveform peaks using ffmpeg stream to avoid memory overhead.
-        Saves as JSON file.
+        Saves as JSON file. 
+        Auto-adjusts resolution for long files to prevent frontend OOM.
         """
         print(f"Generating peaks for: {audio_path}")
         try:
             import numpy as np
             import subprocess
+            
+            # 1. Check Duration to adjust PPS (Target Max ~100k points)
+            duration = self._get_duration(audio_path)
+            if duration > 0:
+                # Target max points for mobile stability (150,000 points is safe)
+                # 1 hour (3600s) -> ~41 pps
+                target_pps = int(150000 / duration)
+                points_per_second = min(points_per_second, target_pps)
+                # Ensure minimum resolution (e.g. 20 pps) unless extremely long
+                points_per_second = max(20, points_per_second)
+                
+            print(f"Generating peaks with resolution: {points_per_second} pps (Duration: {duration}s)")
             
             # Command to output raw float32 LE mono audio to stdout
             cmd = [
